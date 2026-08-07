@@ -1,28 +1,27 @@
-#[cfg(target_os = "macos")]
-use core_graphics::{
-    event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton},
-    event_source::{CGEventSource, CGEventSourceStateID},
-    geometry::CGPoint,
-};
+use tactum::{Computer, Point};
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(command) = args.next() else {
-        show_usage()
+        exit_with_usage();
     };
 
     if command != "click" {
-        show_usage();
+        exit_with_usage();
     }
 
     let x = parse_coordinate(args.next(), "x");
     let y = parse_coordinate(args.next(), "y");
 
     if args.next().is_some() {
-        show_usage();
+        exit_with_usage();
     }
 
-    click(x, y);
+    let point = Point::new(x, y).expect("validated coordinates must form a point");
+    let computer = Computer::new().unwrap_or_else(|error| exit_with_error(error));
+    computer
+        .click(point)
+        .unwrap_or_else(|error| exit_with_error(error));
 }
 
 fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
@@ -31,36 +30,16 @@ fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
         .filter(|value: &f64| value.is_finite() && *value >= 0.0)
         .unwrap_or_else(|| {
             eprintln!("{name} must be a non-negative number");
-            show_usage();
+            exit_with_usage();
         })
 }
 
-#[cfg(target_os = "macos")]
-fn click(x: f64, y: f64) {
-    let point = CGPoint::new(x, y);
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .expect("macOS could not create an event source");
-    let down = CGEvent::new_mouse_event(
-        source.clone(),
-        CGEventType::LeftMouseDown,
-        point,
-        CGMouseButton::Left,
-    )
-    .expect("macOS could not create a mouse-down event");
-    let up = CGEvent::new_mouse_event(source, CGEventType::LeftMouseUp, point, CGMouseButton::Left)
-        .expect("macOS could not create a mouse-up event");
-
-    down.post(CGEventTapLocation::HID);
-    up.post(CGEventTapLocation::HID);
-}
-
-#[cfg(not(target_os = "macos"))]
-fn click(_: f64, _: f64) {
-    eprintln!("tactum currently supports macOS only");
+fn exit_with_error(error: tactum::Error) -> ! {
+    eprintln!("tactum: {error}");
     std::process::exit(1);
 }
 
-fn show_usage() -> ! {
+fn exit_with_usage() -> ! {
     eprintln!("Usage: tactum click <x> <y>");
     std::process::exit(2);
 }
