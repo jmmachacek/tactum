@@ -6,10 +6,24 @@ use core_graphics::{
 
 use crate::{Error, Point, Result};
 
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> u8;
+}
+
 pub(crate) struct Computer;
+
+fn input_permission_granted() -> bool {
+    // AXIsProcessTrusted has no arguments and returns the macOS Boolean type.
+    unsafe { AXIsProcessTrusted() != 0 }
+}
 
 impl Computer {
     pub(crate) fn new() -> Result<Self> {
+        if !input_permission_granted() {
+            return Err(Error::PermissionDenied);
+        }
+
         Ok(Self)
     }
 

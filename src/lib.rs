@@ -58,6 +58,8 @@ pub enum Error {
     UnsupportedPlatform,
     /// A coordinate was negative, infinite, or NaN.
     InvalidPoint,
+    /// The process is not allowed to send input to the computer.
+    PermissionDenied,
     /// The operating system could not create an input event source.
     EventSourceUnavailable,
     /// The operating system could not create an input event.
@@ -69,6 +71,9 @@ impl fmt::Display for Error {
         match self {
             Self::UnsupportedPlatform => f.write_str("this platform is not supported yet"),
             Self::InvalidPoint => f.write_str("coordinates must be finite and non-negative"),
+            Self::PermissionDenied => {
+                f.write_str("operating system permission is required to send input to the computer")
+            }
             Self::EventSourceUnavailable => {
                 f.write_str("the operating system could not create an input event source")
             }
