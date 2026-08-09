@@ -27,9 +27,9 @@ fn main() {
 fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
     value
         .and_then(|value| value.parse().ok())
-        .filter(|value: &f64| value.is_finite() && *value >= 0.0)
+        .filter(|value: &f64| value.is_finite())
         .unwrap_or_else(|| {
-            eprintln!("{name} must be a non-negative number");
+            eprintln!("{name} must be a finite number");
             exit_with_usage();
         })
 }

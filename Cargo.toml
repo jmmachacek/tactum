@@ -7,3 +7,4 @@ license = "MIT OR Apache-2.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25"
+image = { version = "0.25", default-features = false, features = ["png"] }
