@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "A minimal macOS desktop-control MVP"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/jmmachacek/tactum"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25"
