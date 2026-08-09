@@ -1,4 +1,4 @@
-use crate::{Error, Point, Result, Screenshot};
+use crate::{Error, Point, Result, platform::CapturedScreenshot};
 
 pub(crate) struct Computer;
 
@@ -15,7 +15,7 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
-    pub(crate) fn screenshot(&self) -> Result<Screenshot> {
+    pub(crate) fn screenshot(&self) -> Result<CapturedScreenshot> {
         Err(Error::UnsupportedPlatform)
     }
 }

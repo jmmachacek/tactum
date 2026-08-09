@@ -10,7 +10,7 @@ use core_graphics::{
 };
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 
-use crate::{Error, Point, Result, Screenshot};
+use crate::{Error, Point, Result, platform::CapturedScreenshot};
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -76,7 +76,7 @@ impl Computer {
         Ok(())
     }
 
-    pub(crate) fn screenshot(&self) -> Result<Screenshot> {
+    pub(crate) fn screenshot(&self) -> Result<CapturedScreenshot> {
         if !ScreenCaptureAccess.preflight() {
             return Err(Error::PermissionDenied);
         }
@@ -112,13 +112,13 @@ impl Computer {
 
         let desktop_origin = Point::new(display_bounds.origin.x, display_bounds.origin.y)
             .map_err(|_| Error::OperationFailed)?;
-        Ok(Screenshot::new(
+        Ok(CapturedScreenshot {
             png,
             width,
             height,
             desktop_origin,
-            display_bounds.size.width,
-            display_bounds.size.height,
-        ))
+            desktop_width: display_bounds.size.width,
+            desktop_height: display_bounds.size.height,
+        })
     }
 }

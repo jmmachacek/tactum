@@ -57,7 +57,16 @@ impl Computer {
 
     /// Captures the primary display as a PNG image.
     pub fn screenshot(&self) -> Result<Screenshot> {
-        self.platform.screenshot()
+        let captured = self.platform.screenshot()?;
+
+        Ok(Screenshot {
+            png: captured.png,
+            width: captured.width,
+            height: captured.height,
+            desktop_origin: captured.desktop_origin,
+            desktop_width: captured.desktop_width,
+            desktop_height: captured.desktop_height,
+        })
     }
 }
 
@@ -73,24 +82,6 @@ pub struct Screenshot {
 }
 
 impl Screenshot {
-    pub(crate) fn new(
-        png: Vec<u8>,
-        width: u32,
-        height: u32,
-        desktop_origin: Point,
-        desktop_width: f64,
-        desktop_height: f64,
-    ) -> Self {
-        Self {
-            png,
-            width,
-            height,
-            desktop_origin,
-            desktop_width,
-            desktop_height,
-        }
-    }
-
     /// Returns the screenshot width in pixels.
     pub const fn width(&self) -> u32 {
         self.width
@@ -181,14 +172,14 @@ mod tests {
 
     #[test]
     fn screenshot_maps_pixels_to_desktop_points() {
-        let screenshot = Screenshot::new(
-            Vec::new(),
-            200,
-            100,
-            Point::new(-100.0, 50.0).unwrap(),
-            100.0,
-            50.0,
-        );
+        let screenshot = Screenshot {
+            png: Vec::new(),
+            width: 200,
+            height: 100,
+            desktop_origin: Point::new(-100.0, 50.0).unwrap(),
+            desktop_width: 100.0,
+            desktop_height: 50.0,
+        };
 
         let point = screenshot.to_desktop_point(100.0, 50.0).unwrap();
 
