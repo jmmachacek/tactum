@@ -57,16 +57,33 @@ impl Computer {
 }
 
 /// A PNG screenshot of a display.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Screenshot {
     png: Vec<u8>,
     width: u32,
     height: u32,
+    desktop_origin: Point,
+    desktop_width: f64,
+    desktop_height: f64,
 }
 
 impl Screenshot {
-    pub(crate) fn new(png: Vec<u8>, width: u32, height: u32) -> Self {
-        Self { png, width, height }
+    pub(crate) fn new(
+        png: Vec<u8>,
+        width: u32,
+        height: u32,
+        desktop_origin: Point,
+        desktop_width: f64,
+        desktop_height: f64,
+    ) -> Self {
+        Self {
+            png,
+            width,
+            height,
+            desktop_origin,
+            desktop_width,
+            desktop_height,
+        }
     }
 
     /// Returns the screenshot width in pixels.
@@ -88,6 +105,24 @@ impl Screenshot {
     pub fn into_png(self) -> Vec<u8> {
         self.png
     }
+
+    /// Converts a pixel coordinate in this image to a global desktop point.
+    pub fn to_desktop_point(&self, x: f64, y: f64) -> Result<Point> {
+        if !x.is_finite()
+            || !y.is_finite()
+            || x < 0.0
+            || y < 0.0
+            || x >= self.width as f64
+            || y >= self.height as f64
+        {
+            return Err(Error::InvalidPoint);
+        }
+
+        Point::new(
+            self.desktop_origin.x() + x * self.desktop_width / self.width as f64,
+            self.desktop_origin.y() + y * self.desktop_height / self.height as f64,
+        )
+    }
 }
 
 /// Errors returned by computer-control operations.
@@ -95,7 +130,7 @@ impl Screenshot {
 pub enum Error {
     /// The current operating system does not have a backend yet.
     UnsupportedPlatform,
-    /// A coordinate was negative, infinite, or NaN.
+    /// A coordinate was invalid for the requested operation.
     InvalidPoint,
     /// The process is not allowed to perform the requested operation.
     PermissionDenied,
@@ -107,7 +142,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnsupportedPlatform => f.write_str("this platform is not supported yet"),
-            Self::InvalidPoint => f.write_str("coordinates must be finite"),
+            Self::InvalidPoint => f.write_str("coordinates are invalid for this operation"),
             Self::PermissionDenied => {
                 f.write_str("operating system permission is required for this operation")
             }
@@ -123,7 +158,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Point};
+    use super::{Error, Point, Screenshot};
 
     #[test]
     fn point_accepts_finite_coordinates() {
@@ -137,5 +172,26 @@ mod tests {
     fn point_rejects_invalid_coordinates() {
         assert_eq!(Point::new(f64::NAN, 0.0), Err(Error::InvalidPoint));
         assert_eq!(Point::new(0.0, f64::INFINITY), Err(Error::InvalidPoint));
+    }
+
+    #[test]
+    fn screenshot_maps_pixels_to_desktop_points() {
+        let screenshot = Screenshot::new(
+            Vec::new(),
+            200,
+            100,
+            Point::new(-100.0, 50.0).unwrap(),
+            100.0,
+            50.0,
+        );
+
+        let point = screenshot.to_desktop_point(100.0, 50.0).unwrap();
+
+        assert_eq!(point.x(), -50.0);
+        assert_eq!(point.y(), 75.0);
+        assert_eq!(
+            screenshot.to_desktop_point(200.0, 0.0),
+            Err(Error::InvalidPoint)
+        );
     }
 }

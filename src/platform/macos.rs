@@ -62,7 +62,9 @@ impl Computer {
             return Err(Error::PermissionDenied);
         }
 
-        let image = CGDisplay::main().image().ok_or(Error::OperationFailed)?;
+        let display = CGDisplay::main();
+        let display_bounds = display.bounds();
+        let image = display.image().ok_or(Error::OperationFailed)?;
         let width = u32::try_from(image.width()).map_err(|_| Error::OperationFailed)?;
         let height = u32::try_from(image.height()).map_err(|_| Error::OperationFailed)?;
         let color_space = CGColorSpace::create_device_rgb();
@@ -89,6 +91,15 @@ impl Computer {
             .write_image(context.data(), width, height, ExtendedColorType::Rgba8)
             .map_err(|_| Error::OperationFailed)?;
 
-        Ok(Screenshot::new(png, width, height))
+        let desktop_origin = Point::new(display_bounds.origin.x, display_bounds.origin.y)
+            .map_err(|_| Error::OperationFailed)?;
+        Ok(Screenshot::new(
+            png,
+            width,
+            height,
+            desktop_origin,
+            display_bounds.size.width,
+            display_bounds.size.height,
+        ))
     }
 }
