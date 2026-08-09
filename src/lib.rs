@@ -50,6 +50,11 @@ impl Computer {
         self.platform.click(point)
     }
 
+    /// Moves the mouse cursor to `point`.
+    pub fn move_to(&self, point: Point) -> Result<()> {
+        self.platform.move_to(point)
+    }
+
     /// Captures the primary display as a PNG image.
     pub fn screenshot(&self) -> Result<Screenshot> {
         self.platform.screenshot()

@@ -57,6 +57,25 @@ impl Computer {
         Ok(())
     }
 
+    pub(crate) fn move_to(&self, point: Point) -> Result<()> {
+        if !input_permission_granted() {
+            return Err(Error::PermissionDenied);
+        }
+
+        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+            .map_err(|_| Error::OperationFailed)?;
+        let event = CGEvent::new_mouse_event(
+            source,
+            CGEventType::MouseMoved,
+            CGPoint::new(point.x(), point.y()),
+            CGMouseButton::Left,
+        )
+        .map_err(|_| Error::OperationFailed)?;
+
+        event.post(CGEventTapLocation::HID);
+        Ok(())
+    }
+
     pub(crate) fn screenshot(&self) -> Result<Screenshot> {
         if !ScreenCaptureAccess.preflight() {
             return Err(Error::PermissionDenied);

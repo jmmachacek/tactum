@@ -11,6 +11,10 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
+    pub(crate) fn move_to(&self, _point: Point) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
     pub(crate) fn screenshot(&self) -> Result<Screenshot> {
         Err(Error::UnsupportedPlatform)
     }
