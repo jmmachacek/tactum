@@ -3,7 +3,7 @@ use core_graphics::{
     color_space::CGColorSpace,
     context::CGContext,
     display::CGDisplay,
-    event::{CGEvent, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton},
+    event::{CGEvent, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton, ScrollEventUnit},
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect, CGSize},
     image::{CGImageAlphaInfo, CGImageByteOrderInfo},
@@ -121,6 +121,23 @@ impl Computer {
         )
         .map_err(|_| Error::OperationFailed)?;
 
+        event.post(CGEventTapLocation::HID);
+        Ok(())
+    }
+
+    pub(crate) fn scroll(&self, horizontal: i32, vertical: i32) -> Result<()> {
+        if horizontal == 0 && vertical == 0 {
+            return Ok(());
+        }
+        if !input_permission_granted() {
+            return Err(Error::PermissionDenied);
+        }
+
+        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+            .map_err(|_| Error::OperationFailed)?;
+        let event =
+            CGEvent::new_scroll_event(source, ScrollEventUnit::LINE, 2, vertical, horizontal, 0)
+                .map_err(|_| Error::OperationFailed)?;
         event.post(CGEventTapLocation::HID);
         Ok(())
     }

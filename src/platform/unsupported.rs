@@ -15,6 +15,10 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
+    pub(crate) fn scroll(&self, _horizontal: i32, _vertical: i32) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
     pub(crate) fn key_press(&self, _key: Key) -> Result<()> {
         Err(Error::UnsupportedPlatform)
     }

@@ -108,6 +108,14 @@ impl Computer {
         self.platform.move_to(point)
     }
 
+    /// Scrolls the focused target by signed logical deltas.
+    ///
+    /// Positive horizontal values scroll right; positive vertical values scroll up.
+    /// The actual distance is determined by the operating system and target application.
+    pub fn scroll(&self, horizontal: i32, vertical: i32) -> Result<()> {
+        self.platform.scroll(horizontal, vertical)
+    }
+
     /// Presses and releases `key`.
     pub fn key_press(&self, key: Key) -> Result<()> {
         self.platform.key_press(key)

@@ -39,6 +39,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
+        "scroll" => {
+            let horizontal = parse_int(args.next(), "horizontal");
+            let vertical = parse_int(args.next(), "vertical");
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            computer.scroll(horizontal, vertical)?;
+        }
+
         "key" => {
             let Some(key) = args.next().as_deref().and_then(parse_key) else {
                 exit_with_usage();
@@ -68,6 +78,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::sleep(Duration::from_millis(20));
 
     Ok(())
+}
+
+fn parse_int(value: Option<String>, name: &str) -> i32 {
+    value
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| {
+            eprintln!("{name} must be an integer");
+            exit_with_usage();
+        })
+}
+
+fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
+    value
+        .and_then(|value| value.parse().ok())
+        .filter(|value: &f64| value.is_finite() && *value >= 0.0)
+        .unwrap_or_else(|| {
+            eprintln!("{name} must be a non-negative number");
+            exit_with_usage();
+        })
 }
 
 fn parse_key(value: &str) -> Option<Key> {
@@ -120,21 +149,12 @@ fn parse_key(value: &str) -> Option<Key> {
     }
 }
 
-fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
-    value
-        .and_then(|value| value.parse().ok())
-        .filter(|value: &f64| value.is_finite() && *value >= 0.0)
-        .unwrap_or_else(|| {
-            eprintln!("{name} must be a non-negative number");
-            exit_with_usage();
-        })
-}
-
 fn exit_with_usage() -> ! {
     eprintln!("Usage:");
     eprintln!("  cargo run --example cli -- screenshot <path>");
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- click <image-x> <image-y>");
+    eprintln!("  cargo run --example cli -- scroll <horizontal> <vertical>");
     eprintln!("  cargo run --example cli -- key <key>");
     eprintln!("  cargo run --example cli -- type <text>");
     process::exit(2);
