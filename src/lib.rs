@@ -32,6 +32,55 @@ impl Point {
     }
 }
 
+/// A keyboard key with a layout-independent meaning.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Key {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Backspace,
+    Tab,
+    Return,
+    Escape,
+    Space,
+    Delete,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Left,
+    Right,
+    Down,
+    Up,
+    Shift,
+    Control,
+    Option,
+    Command,
+}
+
 /// A controller for the local computer.
 pub struct Computer {
     platform: platform::Computer,
@@ -53,6 +102,26 @@ impl Computer {
     /// Moves the mouse cursor to `point`.
     pub fn move_to(&self, point: Point) -> Result<()> {
         self.platform.move_to(point)
+    }
+
+    /// Presses and releases `key`.
+    pub fn key_press(&self, key: Key) -> Result<()> {
+        self.platform.key_press(key)
+    }
+
+    /// Presses `key` until [`Computer::key_up`] is called.
+    pub fn key_down(&self, key: Key) -> Result<()> {
+        self.platform.key_down(key)
+    }
+
+    /// Releases `key`.
+    pub fn key_up(&self, key: Key) -> Result<()> {
+        self.platform.key_up(key)
+    }
+
+    /// Types Unicode text into the focused application.
+    pub fn type_text(&self, text: &str) -> Result<()> {
+        self.platform.type_text(text)
     }
 
     /// Captures the primary display as a PNG image.

@@ -1,6 +1,6 @@
 use std::{env, error::Error, fs, process, thread, time::Duration};
 
-use tactum::Computer;
+use tactum::{Computer, Key};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);
@@ -37,14 +37,87 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 computer.click(point)?;
             }
-            // Keep the process alive long enough for macOS to deliver the event.
-            thread::sleep(Duration::from_millis(20));
+        }
+
+        "key" => {
+            let Some(key) = args.next().as_deref().and_then(parse_key) else {
+                exit_with_usage();
+            };
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            computer.key_press(key)?;
+        }
+
+        "type" => {
+            let Some(text) = args.next() else {
+                exit_with_usage();
+            };
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            computer.type_text(&text)?;
         }
 
         _ => exit_with_usage(),
     }
 
+    // Keep the process alive long enough for the OS to deliver the event(s).
+    thread::sleep(Duration::from_millis(20));
+
     Ok(())
+}
+
+fn parse_key(value: &str) -> Option<Key> {
+    match value {
+        "a" => Some(Key::A),
+        "b" => Some(Key::B),
+        "c" => Some(Key::C),
+        "d" => Some(Key::D),
+        "e" => Some(Key::E),
+        "f" => Some(Key::F),
+        "g" => Some(Key::G),
+        "h" => Some(Key::H),
+        "i" => Some(Key::I),
+        "j" => Some(Key::J),
+        "k" => Some(Key::K),
+        "l" => Some(Key::L),
+        "m" => Some(Key::M),
+        "n" => Some(Key::N),
+        "o" => Some(Key::O),
+        "p" => Some(Key::P),
+        "q" => Some(Key::Q),
+        "r" => Some(Key::R),
+        "s" => Some(Key::S),
+        "t" => Some(Key::T),
+        "u" => Some(Key::U),
+        "v" => Some(Key::V),
+        "w" => Some(Key::W),
+        "x" => Some(Key::X),
+        "y" => Some(Key::Y),
+        "z" => Some(Key::Z),
+        "backspace" => Some(Key::Backspace),
+        "tab" => Some(Key::Tab),
+        "return" => Some(Key::Return),
+        "escape" => Some(Key::Escape),
+        "space" => Some(Key::Space),
+        "delete" => Some(Key::Delete),
+        "home" => Some(Key::Home),
+        "end" => Some(Key::End),
+        "page-up" => Some(Key::PageUp),
+        "page-down" => Some(Key::PageDown),
+        "left" => Some(Key::Left),
+        "right" => Some(Key::Right),
+        "down" => Some(Key::Down),
+        "up" => Some(Key::Up),
+        "shift" => Some(Key::Shift),
+        "control" => Some(Key::Control),
+        "option" => Some(Key::Option),
+        "command" => Some(Key::Command),
+        _ => None,
+    }
 }
 
 fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
@@ -62,5 +135,7 @@ fn exit_with_usage() -> ! {
     eprintln!("  cargo run --example cli -- screenshot <path>");
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- click <image-x> <image-y>");
+    eprintln!("  cargo run --example cli -- key <key>");
+    eprintln!("  cargo run --example cli -- type <text>");
     process::exit(2);
 }
