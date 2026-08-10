@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             fs::write(path, screenshot.png())?;
         }
 
-        "move" | "click" => {
+        "move" | "click" | "double-click" => {
             let x = parse_coordinate(args.next(), "x");
             let y = parse_coordinate(args.next(), "y");
             if args.next().is_some() {
@@ -32,10 +32,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let screenshot = computer.screenshot()?;
             let point = screenshot.to_desktop_point(x, y)?;
-            if command == "move" {
-                computer.move_to(point)?;
-            } else {
-                computer.click(point)?;
+            match command.as_str() {
+                "move" => computer.move_to(point)?,
+                "click" => computer.click(point)?,
+                "double-click" => computer.double_click(point)?,
+                _ => unreachable!(),
             }
         }
 
@@ -154,6 +155,7 @@ fn exit_with_usage() -> ! {
     eprintln!("  cargo run --example cli -- screenshot <path>");
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- click <image-x> <image-y>");
+    eprintln!("  cargo run --example cli -- double-click <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- scroll <horizontal> <vertical>");
     eprintln!("  cargo run --example cli -- key <key>");
     eprintln!("  cargo run --example cli -- type <text>");

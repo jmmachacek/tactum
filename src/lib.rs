@@ -103,6 +103,11 @@ impl Computer {
         self.platform.click(point)
     }
 
+    /// Double-clicks the primary mouse button at `point`.
+    pub fn double_click(&self, point: Point) -> Result<()> {
+        self.platform.double_click(point)
+    }
+
     /// Moves the mouse cursor to `point`.
     pub fn move_to(&self, point: Point) -> Result<()> {
         self.platform.move_to(point)

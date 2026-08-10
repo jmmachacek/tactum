@@ -1,9 +1,14 @@
+use std::{thread, time::Duration};
+
 use core_graphics::{
     access::ScreenCaptureAccess,
     color_space::CGColorSpace,
     context::CGContext,
     display::CGDisplay,
-    event::{CGEvent, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton, ScrollEventUnit},
+    event::{
+        CGEvent, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton, EventField,
+        ScrollEventUnit,
+    },
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect, CGSize},
     image::{CGImageAlphaInfo, CGImageByteOrderInfo},
@@ -85,6 +90,27 @@ impl Computer {
 
         let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
             .map_err(|_| Error::OperationFailed)?;
+        self.post_mouse_click(source, point, 1)
+    }
+
+    pub(crate) fn double_click(&self, point: Point) -> Result<()> {
+        if !input_permission_granted() {
+            return Err(Error::PermissionDenied);
+        }
+
+        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+            .map_err(|_| Error::OperationFailed)?;
+        self.post_mouse_click(source.clone(), point, 1)?;
+        thread::sleep(Duration::from_millis(20));
+        self.post_mouse_click(source, point, 2)
+    }
+
+    fn post_mouse_click(
+        &self,
+        source: CGEventSource,
+        point: Point,
+        click_state: i64,
+    ) -> Result<()> {
         let location = CGPoint::new(point.x(), point.y());
         let down = CGEvent::new_mouse_event(
             source.clone(),
@@ -101,6 +127,8 @@ impl Computer {
         )
         .map_err(|_| Error::OperationFailed)?;
 
+        down.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click_state);
+        up.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click_state);
         down.post(CGEventTapLocation::HID);
         up.post(CGEventTapLocation::HID);
         Ok(())
