@@ -32,7 +32,11 @@ impl Point {
     }
 }
 
-/// A keyboard key with a layout-independent meaning.
+/// A keyboard key represented by its physical position on a standard US layout.
+///
+/// Letter variants follow US QWERTY positions and may produce different
+/// characters with another active keyboard layout. Use [`Computer::type_text`]
+/// to enter layout-independent text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Key {
     A,
