@@ -104,6 +104,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             computer.type_text(&text)?;
         }
 
+        "read-clipboard" => {
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            if let Some(text) = computer.read_clipboard()? {
+                println!("{text}");
+            }
+        }
+
+        "write-clipboard" => {
+            let Some(text) = args.next() else {
+                exit_with_usage();
+            };
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            computer.write_clipboard(&text)?;
+        }
+
         _ => exit_with_usage(),
     }
 
@@ -201,5 +222,7 @@ fn exit_with_usage() -> ! {
     eprintln!("  cargo run --example cli -- scroll <horizontal> <vertical>");
     eprintln!("  cargo run --example cli -- key <key>");
     eprintln!("  cargo run --example cli -- type <text>");
+    eprintln!("  cargo run --example cli -- read-clipboard");
+    eprintln!("  cargo run --example cli -- write-clipboard <text>");
     process::exit(2);
 }

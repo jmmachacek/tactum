@@ -43,6 +43,14 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
+    pub(crate) fn read_clipboard(&self) -> Result<Option<String>> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    pub(crate) fn write_clipboard(&self, _text: &str) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
     pub(crate) fn screenshot(&self) -> Result<CapturedScreenshot> {
         Err(Error::UnsupportedPlatform)
     }

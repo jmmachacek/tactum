@@ -9,3 +9,6 @@ repository = "https://github.com/jmmachacek/tactum"
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = { version = "0.25", features = ["highsierra"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
+objc2-foundation = { version = "0.3", features = ["NSString"] }

@@ -154,6 +154,16 @@ impl Computer {
         self.platform.type_text(text)
     }
 
+    /// Returns plain text from the system clipboard, if available.
+    pub fn read_clipboard(&self) -> Result<Option<String>> {
+        self.platform.read_clipboard()
+    }
+
+    /// Replaces the system clipboard with plain text.
+    pub fn write_clipboard(&self, text: &str) -> Result<()> {
+        self.platform.write_clipboard(text)
+    }
+
     /// Captures the primary display as a PNG image.
     pub fn screenshot(&self) -> Result<Screenshot> {
         let captured = self.platform.screenshot()?;

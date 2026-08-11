@@ -11,6 +11,8 @@ use core_graphics::{
     geometry::CGPoint,
 };
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
+use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+use objc2_foundation::NSString;
 
 use crate::{Error, Key, MouseButton, Point, Result, platform::CapturedScreenshot};
 
@@ -258,6 +260,27 @@ impl Computer {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn read_clipboard(&self) -> Result<Option<String>> {
+        let pasteboard = NSPasteboard::generalPasteboard();
+        let string_type = unsafe { NSPasteboardTypeString };
+
+        Ok(pasteboard
+            .stringForType(string_type)
+            .map(|text| text.to_string()))
+    }
+
+    pub(crate) fn write_clipboard(&self, text: &str) -> Result<()> {
+        let pasteboard = NSPasteboard::generalPasteboard();
+        let string_type = unsafe { NSPasteboardTypeString };
+        pasteboard.clearContents();
+
+        if pasteboard.setString_forType(&NSString::from_str(text), string_type) {
+            Ok(())
+        } else {
+            Err(Error::OperationFailed)
+        }
     }
 
     fn post_key(&self, key_code: CGKeyCode, key_down: bool) -> Result<()> {
