@@ -93,6 +93,49 @@ pub enum Key {
     Command,
 }
 
+/// A connected display in the global desktop coordinate space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Display {
+    id: u64,
+    origin: Point,
+    width: f64,
+    height: f64,
+    scale_x: f64,
+    scale_y: f64,
+}
+
+impl Display {
+    /// Returns the platform-specific display identifier.
+    pub const fn id(self) -> u64 {
+        self.id
+    }
+
+    /// Returns the display's top-left point in global desktop coordinates.
+    pub const fn origin(self) -> Point {
+        self.origin
+    }
+
+    /// Returns the display width in desktop coordinates.
+    pub const fn width(self) -> f64 {
+        self.width
+    }
+
+    /// Returns the display height in desktop coordinates.
+    pub const fn height(self) -> f64 {
+        self.height
+    }
+
+    /// Returns the horizontal pixel scale relative to desktop coordinates.
+    pub const fn scale_x(self) -> f64 {
+        self.scale_x
+    }
+
+    /// Returns the vertical pixel scale relative to desktop coordinates.
+    pub const fn scale_y(self) -> f64 {
+        self.scale_y
+    }
+}
+
 /// A controller for the local computer.
 pub struct Computer {
     platform: platform::Computer,
@@ -174,9 +217,38 @@ impl Computer {
         self.platform.write_clipboard(text)
     }
 
+    /// Returns all active displays.
+    pub fn displays(&self) -> Result<Vec<Display>> {
+        self.platform.displays().map(|displays| {
+            displays
+                .into_iter()
+                .map(|display| Display {
+                    id: display.id,
+                    origin: display.origin,
+                    width: display.width,
+                    height: display.height,
+                    scale_x: display.scale_x,
+                    scale_y: display.scale_y,
+                })
+                .collect()
+        })
+    }
+
     /// Captures the primary display as a PNG image.
     pub fn screenshot(&self) -> Result<Screenshot> {
-        let captured = self.platform.screenshot()?;
+        self.screenshot_display_id(None)
+    }
+
+    /// Captures `display` as a PNG image.
+    pub fn screenshot_display(&self, display: Display) -> Result<Screenshot> {
+        self.screenshot_display_id(Some(display.id))
+    }
+
+    fn screenshot_display_id(&self, display_id: Option<u64>) -> Result<Screenshot> {
+        let captured = match display_id {
+            Some(display_id) => self.platform.screenshot_display(display_id)?,
+            None => self.platform.screenshot()?,
+        };
 
         Ok(Screenshot {
             png: captured.png,
@@ -273,7 +345,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Point, Screenshot};
+    use super::{Display, Error, Point, Screenshot};
 
     #[test]
     fn point_accepts_finite_coordinates() {
@@ -308,5 +380,24 @@ mod tests {
             screenshot.to_desktop_point(200.0, 0.0),
             Err(Error::InvalidPoint)
         );
+    }
+
+    #[test]
+    fn display_exposes_its_desktop_geometry() {
+        let display = Display {
+            id: 42,
+            origin: Point::new(-100.0, 50.0).unwrap(),
+            width: 200.0,
+            height: 100.0,
+            scale_x: 2.0,
+            scale_y: 2.0,
+        };
+
+        assert_eq!(display.id(), 42);
+        assert_eq!(display.origin(), Point::new(-100.0, 50.0).unwrap());
+        assert_eq!(display.width(), 200.0);
+        assert_eq!(display.height(), 100.0);
+        assert_eq!(display.scale_x(), 2.0);
+        assert_eq!(display.scale_y(), 2.0);
     }
 }

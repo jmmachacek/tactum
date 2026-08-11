@@ -14,7 +14,10 @@ use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
 use objc2_foundation::NSString;
 
-use crate::{Error, Key, MouseButton, Point, Result, platform::CapturedScreenshot};
+use crate::{
+    Error, Key, MouseButton, Point, Result,
+    platform::{CapturedDisplay, CapturedScreenshot},
+};
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -329,12 +332,47 @@ impl Computer {
         Ok(())
     }
 
+    pub(crate) fn displays(&self) -> Result<Vec<CapturedDisplay>> {
+        CGDisplay::active_displays()
+            .map_err(|_| Error::OperationFailed)?
+            .into_iter()
+            .map(|id| {
+                let display = CGDisplay::new(id);
+                let bounds = display.bounds();
+                let width = bounds.size.width;
+                let height = bounds.size.height;
+                if width <= 0.0 || height <= 0.0 {
+                    return Err(Error::OperationFailed);
+                }
+                let mode = display.display_mode().ok_or(Error::OperationFailed)?;
+
+                Ok(CapturedDisplay {
+                    id: u64::from(id),
+                    origin: Point::new(bounds.origin.x, bounds.origin.y)
+                        .map_err(|_| Error::OperationFailed)?,
+                    width,
+                    height,
+                    scale_x: mode.pixel_width() as f64 / width,
+                    scale_y: mode.pixel_height() as f64 / height,
+                })
+            })
+            .collect()
+    }
+
     pub(crate) fn screenshot(&self) -> Result<CapturedScreenshot> {
+        self.capture_screenshot(CGDisplay::main())
+    }
+
+    pub(crate) fn screenshot_display(&self, id: u64) -> Result<CapturedScreenshot> {
+        let id = u32::try_from(id).map_err(|_| Error::OperationFailed)?;
+        self.capture_screenshot(CGDisplay::new(id))
+    }
+
+    fn capture_screenshot(&self, display: CGDisplay) -> Result<CapturedScreenshot> {
         if !ScreenCaptureAccess.preflight() {
             return Err(Error::PermissionDenied);
         }
 
-        let display = CGDisplay::main();
         let display_bounds = display.bounds();
         let image = display.image().ok_or(Error::OperationFailed)?;
         let width = u32::try_from(image.width()).map_err(|_| Error::OperationFailed)?;

@@ -1,5 +1,14 @@
 use crate::Point;
 
+pub(crate) struct CapturedDisplay {
+    pub(crate) id: u64,
+    pub(crate) origin: Point,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+    pub(crate) scale_x: f64,
+    pub(crate) scale_y: f64,
+}
+
 pub(crate) struct CapturedScreenshot {
     pub(crate) png: Vec<u8>,
     pub(crate) width: u32,

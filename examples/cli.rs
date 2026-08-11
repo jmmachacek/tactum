@@ -23,6 +23,46 @@ fn main() -> Result<(), Box<dyn Error>> {
             fs::write(path, screenshot.png())?;
         }
 
+        "displays" => {
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            for display in computer.displays()? {
+                println!(
+                    "{}: origin ({}, {}), size {}x{}, scale {}x{}",
+                    display.id(),
+                    display.origin().x(),
+                    display.origin().y(),
+                    display.width(),
+                    display.height(),
+                    display.scale_x(),
+                    display.scale_y(),
+                );
+            }
+        }
+
+        "screenshot-display" => {
+            let id = parse_display_id(args.next());
+            let Some(path) = args.next() else {
+                exit_with_usage();
+            };
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            let display = computer
+                .displays()?
+                .into_iter()
+                .find(|display| display.id() == id)
+                .unwrap_or_else(|| {
+                    eprintln!("no active display has ID {id}");
+                    exit_with_usage();
+                });
+            let screenshot = computer.screenshot_display(display)?;
+            fs::write(path, screenshot.png())?;
+        }
+
         "move" => {
             let x = parse_coordinate(args.next(), "x");
             let y = parse_coordinate(args.next(), "y");
@@ -143,6 +183,15 @@ fn parse_int(value: Option<String>, name: &str) -> i32 {
         })
 }
 
+fn parse_display_id(value: Option<String>) -> u64 {
+    value
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| {
+            eprintln!("display ID must be an unsigned integer");
+            exit_with_usage();
+        })
+}
+
 fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
     value
         .and_then(|value| value.parse().ok())
@@ -215,6 +264,8 @@ fn parse_key(value: &str) -> Option<Key> {
 fn exit_with_usage() -> ! {
     eprintln!("Usage:");
     eprintln!("  cargo run --example cli -- screenshot <path>");
+    eprintln!("  cargo run --example cli -- displays");
+    eprintln!("  cargo run --example cli -- screenshot-display <id> <path>");
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- click <button> <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- double-click <button> <image-x> <image-y>");

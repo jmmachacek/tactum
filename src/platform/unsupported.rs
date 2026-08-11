@@ -1,4 +1,7 @@
-use crate::{Error, Key, MouseButton, Point, Result, platform::CapturedScreenshot};
+use crate::{
+    Error, Key, MouseButton, Point, Result,
+    platform::{CapturedDisplay, CapturedScreenshot},
+};
 
 pub(crate) struct Computer;
 
@@ -59,7 +62,15 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
+    pub(crate) fn displays(&self) -> Result<Vec<CapturedDisplay>> {
+        Err(Error::UnsupportedPlatform)
+    }
+
     pub(crate) fn screenshot(&self) -> Result<CapturedScreenshot> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    pub(crate) fn screenshot_display(&self, _id: u64) -> Result<CapturedScreenshot> {
         Err(Error::UnsupportedPlatform)
     }
 }
