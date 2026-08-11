@@ -2,16 +2,13 @@ use std::{thread, time::Duration};
 
 use core_graphics::{
     access::ScreenCaptureAccess,
-    color_space::CGColorSpace,
-    context::CGContext,
     display::CGDisplay,
     event::{
         CGEvent, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton, EventField,
         ScrollEventUnit,
     },
     event_source::{CGEventSource, CGEventSourceStateID},
-    geometry::{CGPoint, CGRect, CGSize},
-    image::{CGImageAlphaInfo, CGImageByteOrderInfo},
+    geometry::CGPoint,
 };
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 
@@ -274,28 +271,36 @@ impl Computer {
         let image = display.image().ok_or(Error::OperationFailed)?;
         let width = u32::try_from(image.width()).map_err(|_| Error::OperationFailed)?;
         let height = u32::try_from(image.height()).map_err(|_| Error::OperationFailed)?;
-        let color_space = CGColorSpace::create_device_rgb();
-        let bitmap_info = CGImageAlphaInfo::CGImageAlphaPremultipliedLast as u32
-            | CGImageByteOrderInfo::CGImageByteOrder32Big as u32;
-        let mut context = CGContext::create_bitmap_context(
-            None,
-            width as usize,
-            height as usize,
-            8,
-            width as usize * 4,
-            &color_space,
-            bitmap_info,
-        );
-        let bounds = CGRect::new(
-            &CGPoint::new(0.0, 0.0),
-            &CGSize::new(width as f64, height as f64),
-        );
-        context.draw_image(bounds, &image);
-        context.flush();
+        let row_length = usize::try_from(width)
+            .ok()
+            .and_then(|width| width.checked_mul(4))
+            .ok_or(Error::OperationFailed)?;
+        let bytes_per_row = image.bytes_per_row();
+        let data = image.data();
+        let data = data.bytes();
+        if image.bits_per_component() != 8
+            || image.bits_per_pixel() != 32
+            || bytes_per_row < row_length
+            || data.len()
+                < bytes_per_row
+                    .checked_mul(height as usize)
+                    .ok_or(Error::OperationFailed)?
+        {
+            return Err(Error::OperationFailed);
+        }
+
+        // CGDisplay images are 32-bit little-endian BGRA. Pack rows and convert to RGBA.
+        let mut rgba = Vec::with_capacity(row_length * height as usize);
+        for row in data.chunks_exact(bytes_per_row).take(height as usize) {
+            rgba.extend_from_slice(&row[..row_length]);
+        }
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
 
         let mut png = Vec::new();
         PngEncoder::new(&mut png)
-            .write_image(context.data(), width, height, ExtendedColorType::Rgba8)
+            .write_image(&rgba, width, height, ExtendedColorType::Rgba8)
             .map_err(|_| Error::OperationFailed)?;
 
         let desktop_origin = Point::new(display_bounds.origin.x, display_bounds.origin.y)
