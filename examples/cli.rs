@@ -1,6 +1,6 @@
 use std::{env, error::Error, fs, process, thread, time::Duration};
 
-use tactum::{Computer, Key};
+use tactum::{Computer, Key, MouseButton};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             fs::write(path, screenshot.png())?;
         }
 
-        "move" | "click" | "double-click" => {
+        "move" => {
             let x = parse_coordinate(args.next(), "x");
             let y = parse_coordinate(args.next(), "y");
             if args.next().is_some() {
@@ -32,15 +32,32 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let screenshot = computer.screenshot()?;
             let point = screenshot.to_desktop_point(x, y)?;
-            match command.as_str() {
-                "move" => computer.move_to(point)?,
-                "click" => computer.click(point)?,
-                "double-click" => computer.double_click(point)?,
-                _ => unreachable!(),
+            computer.move_to(point)?;
+        }
+
+        "click" | "double-click" => {
+            let Some(button) = args.next().as_deref().and_then(parse_mouse_button) else {
+                exit_with_usage();
+            };
+            let x = parse_coordinate(args.next(), "x");
+            let y = parse_coordinate(args.next(), "y");
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            let screenshot = computer.screenshot()?;
+            let point = screenshot.to_desktop_point(x, y)?;
+            if command == "click" {
+                computer.click(button, point)?;
+            } else {
+                computer.double_click(button, point)?;
             }
         }
 
         "drag" => {
+            let Some(button) = args.next().as_deref().and_then(parse_mouse_button) else {
+                exit_with_usage();
+            };
             let from_x = parse_coordinate(args.next(), "from-x");
             let from_y = parse_coordinate(args.next(), "from-y");
             let to_x = parse_coordinate(args.next(), "to-x");
@@ -52,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let screenshot = computer.screenshot()?;
             let from = screenshot.to_desktop_point(from_x, from_y)?;
             let to = screenshot.to_desktop_point(to_x, to_y)?;
-            computer.drag(from, to)?;
+            computer.drag(button, from, to)?;
         }
 
         "scroll" => {
@@ -115,6 +132,15 @@ fn parse_coordinate(value: Option<String>, name: &str) -> f64 {
         })
 }
 
+fn parse_mouse_button(value: &str) -> Option<MouseButton> {
+    match value {
+        "left" => Some(MouseButton::Left),
+        "right" => Some(MouseButton::Right),
+        "middle" => Some(MouseButton::Middle),
+        _ => None,
+    }
+}
+
 fn parse_key(value: &str) -> Option<Key> {
     match value {
         "a" => Some(Key::A),
@@ -169,9 +195,9 @@ fn exit_with_usage() -> ! {
     eprintln!("Usage:");
     eprintln!("  cargo run --example cli -- screenshot <path>");
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
-    eprintln!("  cargo run --example cli -- click <image-x> <image-y>");
-    eprintln!("  cargo run --example cli -- double-click <image-x> <image-y>");
-    eprintln!("  cargo run --example cli -- drag <from-x> <from-y> <to-x> <to-y>");
+    eprintln!("  cargo run --example cli -- click <button> <image-x> <image-y>");
+    eprintln!("  cargo run --example cli -- double-click <button> <image-x> <image-y>");
+    eprintln!("  cargo run --example cli -- drag <button> <from-x> <from-y> <to-x> <to-y>");
     eprintln!("  cargo run --example cli -- scroll <horizontal> <vertical>");
     eprintln!("  cargo run --example cli -- key <key>");
     eprintln!("  cargo run --example cli -- type <text>");

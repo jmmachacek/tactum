@@ -12,7 +12,7 @@ use core_graphics::{
 };
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 
-use crate::{Error, Key, Point, Result, platform::CapturedScreenshot};
+use crate::{Error, Key, MouseButton, Point, Result, platform::CapturedScreenshot};
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -26,6 +26,29 @@ const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
 fn input_permission_granted() -> bool {
     // AXIsProcessTrusted has no arguments and returns the macOS Boolean type.
     unsafe { AXIsProcessTrusted() != 0 }
+}
+
+fn get_mouse_events(button: MouseButton) -> (CGMouseButton, CGEventType, CGEventType, CGEventType) {
+    match button {
+        MouseButton::Left => (
+            CGMouseButton::Left,
+            CGEventType::LeftMouseDown,
+            CGEventType::LeftMouseUp,
+            CGEventType::LeftMouseDragged,
+        ),
+        MouseButton::Right => (
+            CGMouseButton::Right,
+            CGEventType::RightMouseDown,
+            CGEventType::RightMouseUp,
+            CGEventType::RightMouseDragged,
+        ),
+        MouseButton::Middle => (
+            CGMouseButton::Center,
+            CGEventType::OtherMouseDown,
+            CGEventType::OtherMouseUp,
+            CGEventType::OtherMouseDragged,
+        ),
+    }
 }
 
 fn get_key_code(key: Key) -> CGKeyCode {
@@ -82,49 +105,41 @@ impl Computer {
         Ok(Self)
     }
 
-    pub(crate) fn click(&self, point: Point) -> Result<()> {
+    pub(crate) fn click(&self, button: MouseButton, point: Point) -> Result<()> {
         if !input_permission_granted() {
             return Err(Error::PermissionDenied);
         }
 
         let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
             .map_err(|_| Error::OperationFailed)?;
-        self.post_mouse_click(source, point, 1)
+        self.post_mouse_click(source, button, point, 1)
     }
 
-    pub(crate) fn double_click(&self, point: Point) -> Result<()> {
+    pub(crate) fn double_click(&self, button: MouseButton, point: Point) -> Result<()> {
         if !input_permission_granted() {
             return Err(Error::PermissionDenied);
         }
 
         let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
             .map_err(|_| Error::OperationFailed)?;
-        self.post_mouse_click(source.clone(), point, 1)?;
+        self.post_mouse_click(source.clone(), button, point, 1)?;
         thread::sleep(INPUT_EVENT_DELAY);
-        self.post_mouse_click(source, point, 2)
+        self.post_mouse_click(source, button, point, 2)
     }
 
     fn post_mouse_click(
         &self,
         source: CGEventSource,
+        button: MouseButton,
         point: Point,
         click_state: i64,
     ) -> Result<()> {
+        let (mouse_button, down_type, up_type, _) = get_mouse_events(button);
         let location = CGPoint::new(point.x(), point.y());
-        let down = CGEvent::new_mouse_event(
-            source.clone(),
-            CGEventType::LeftMouseDown,
-            location,
-            CGMouseButton::Left,
-        )
-        .map_err(|_| Error::OperationFailed)?;
-        let up = CGEvent::new_mouse_event(
-            source,
-            CGEventType::LeftMouseUp,
-            location,
-            CGMouseButton::Left,
-        )
-        .map_err(|_| Error::OperationFailed)?;
+        let down = CGEvent::new_mouse_event(source.clone(), down_type, location, mouse_button)
+            .map_err(|_| Error::OperationFailed)?;
+        let up = CGEvent::new_mouse_event(source, up_type, location, mouse_button)
+            .map_err(|_| Error::OperationFailed)?;
 
         down.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click_state);
         up.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click_state);
@@ -152,34 +167,31 @@ impl Computer {
         Ok(())
     }
 
-    pub(crate) fn drag(&self, from: Point, to: Point) -> Result<()> {
+    pub(crate) fn drag(&self, button: MouseButton, from: Point, to: Point) -> Result<()> {
         if !input_permission_granted() {
             return Err(Error::PermissionDenied);
         }
 
         let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
             .map_err(|_| Error::OperationFailed)?;
+        let (mouse_button, down_type, up_type, dragged_type) = get_mouse_events(button);
         let down = CGEvent::new_mouse_event(
             source.clone(),
-            CGEventType::LeftMouseDown,
+            down_type,
             CGPoint::new(from.x(), from.y()),
-            CGMouseButton::Left,
+            mouse_button,
         )
         .map_err(|_| Error::OperationFailed)?;
         let dragged = CGEvent::new_mouse_event(
             source.clone(),
-            CGEventType::LeftMouseDragged,
+            dragged_type,
             CGPoint::new(to.x(), to.y()),
-            CGMouseButton::Left,
+            mouse_button,
         )
         .map_err(|_| Error::OperationFailed)?;
-        let up = CGEvent::new_mouse_event(
-            source,
-            CGEventType::LeftMouseUp,
-            CGPoint::new(to.x(), to.y()),
-            CGMouseButton::Left,
-        )
-        .map_err(|_| Error::OperationFailed)?;
+        let up =
+            CGEvent::new_mouse_event(source, up_type, CGPoint::new(to.x(), to.y()), mouse_button)
+                .map_err(|_| Error::OperationFailed)?;
 
         down.post(CGEventTapLocation::HID);
         thread::sleep(INPUT_EVENT_DELAY);

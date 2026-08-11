@@ -32,6 +32,14 @@ impl Point {
     }
 }
 
+/// A mouse button.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
 /// A keyboard key represented by its physical position on a standard US layout.
 ///
 /// Letter variants follow US QWERTY positions and may produce different
@@ -98,14 +106,14 @@ impl Computer {
         })
     }
 
-    /// Clicks the primary mouse button at `point`.
-    pub fn click(&self, point: Point) -> Result<()> {
-        self.platform.click(point)
+    /// Clicks `button` at `point`.
+    pub fn click(&self, button: MouseButton, point: Point) -> Result<()> {
+        self.platform.click(button, point)
     }
 
-    /// Double-clicks the primary mouse button at `point`.
-    pub fn double_click(&self, point: Point) -> Result<()> {
-        self.platform.double_click(point)
+    /// Double-clicks `button` at `point`.
+    pub fn double_click(&self, button: MouseButton, point: Point) -> Result<()> {
+        self.platform.double_click(button, point)
     }
 
     /// Moves the mouse cursor to `point`.
@@ -113,9 +121,9 @@ impl Computer {
         self.platform.move_to(point)
     }
 
-    /// Drags the primary mouse button from `from` to `to`.
-    pub fn drag(&self, from: Point, to: Point) -> Result<()> {
-        self.platform.drag(from, to)
+    /// Drags `button` from `from` to `to`.
+    pub fn drag(&self, button: MouseButton, from: Point, to: Point) -> Result<()> {
+        self.platform.drag(button, from, to)
     }
 
     /// Scrolls the focused target by signed logical deltas.

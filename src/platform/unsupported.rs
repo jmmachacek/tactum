@@ -1,4 +1,4 @@
-use crate::{Error, Key, Point, Result, platform::CapturedScreenshot};
+use crate::{Error, Key, MouseButton, Point, Result, platform::CapturedScreenshot};
 
 pub(crate) struct Computer;
 
@@ -7,11 +7,11 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
-    pub(crate) fn click(&self, _point: Point) -> Result<()> {
+    pub(crate) fn click(&self, _button: MouseButton, _point: Point) -> Result<()> {
         Err(Error::UnsupportedPlatform)
     }
 
-    pub(crate) fn double_click(&self, _point: Point) -> Result<()> {
+    pub(crate) fn double_click(&self, _button: MouseButton, _point: Point) -> Result<()> {
         Err(Error::UnsupportedPlatform)
     }
 
@@ -19,7 +19,7 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
-    pub(crate) fn drag(&self, _from: Point, _to: Point) -> Result<()> {
+    pub(crate) fn drag(&self, _button: MouseButton, _from: Point, _to: Point) -> Result<()> {
         Err(Error::UnsupportedPlatform)
     }
 
