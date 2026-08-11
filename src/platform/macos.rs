@@ -129,6 +129,16 @@ impl Computer {
         self.post_mouse_click(source, button, point, 2)
     }
 
+    pub(crate) fn mouse_down(&self, button: MouseButton, point: Point) -> Result<()> {
+        let (mouse_button, down_type, _, _) = get_mouse_events(button);
+        self.post_mouse_event(mouse_button, down_type, point)
+    }
+
+    pub(crate) fn mouse_up(&self, button: MouseButton, point: Point) -> Result<()> {
+        let (mouse_button, _, up_type, _) = get_mouse_events(button);
+        self.post_mouse_event(mouse_button, up_type, point)
+    }
+
     fn post_mouse_click(
         &self,
         source: CGEventSource,
@@ -147,6 +157,29 @@ impl Computer {
         up.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click_state);
         down.post(CGEventTapLocation::HID);
         up.post(CGEventTapLocation::HID);
+        Ok(())
+    }
+
+    fn post_mouse_event(
+        &self,
+        button: CGMouseButton,
+        event_type: CGEventType,
+        point: Point,
+    ) -> Result<()> {
+        if !input_permission_granted() {
+            return Err(Error::PermissionDenied);
+        }
+
+        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+            .map_err(|_| Error::OperationFailed)?;
+        let event = CGEvent::new_mouse_event(
+            source,
+            event_type,
+            CGPoint::new(point.x(), point.y()),
+            button,
+        )
+        .map_err(|_| Error::OperationFailed)?;
+        event.post(CGEventTapLocation::HID);
         Ok(())
     }
 

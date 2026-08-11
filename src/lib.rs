@@ -126,6 +126,16 @@ impl Computer {
         self.platform.drag(button, from, to)
     }
 
+    /// Presses `button` at `point` until [`Computer::mouse_up`] is called.
+    pub fn mouse_down(&self, button: MouseButton, point: Point) -> Result<()> {
+        self.platform.mouse_down(button, point)
+    }
+
+    /// Releases `button` at `point`.
+    pub fn mouse_up(&self, button: MouseButton, point: Point) -> Result<()> {
+        self.platform.mouse_up(button, point)
+    }
+
     /// Scrolls the focused target by signed logical deltas.
     ///
     /// Positive horizontal values scroll right; positive vertical values scroll up.

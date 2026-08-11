@@ -23,6 +23,14 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
+    pub(crate) fn mouse_down(&self, _button: MouseButton, _point: Point) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    pub(crate) fn mouse_up(&self, _button: MouseButton, _point: Point) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
     pub(crate) fn scroll(&self, _horizontal: i32, _vertical: i32) -> Result<()> {
         Err(Error::UnsupportedPlatform)
     }
