@@ -40,6 +40,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
+        "drag" => {
+            let from_x = parse_coordinate(args.next(), "from-x");
+            let from_y = parse_coordinate(args.next(), "from-y");
+            let to_x = parse_coordinate(args.next(), "to-x");
+            let to_y = parse_coordinate(args.next(), "to-y");
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            let screenshot = computer.screenshot()?;
+            let from = screenshot.to_desktop_point(from_x, from_y)?;
+            let to = screenshot.to_desktop_point(to_x, to_y)?;
+            computer.drag(from, to)?;
+        }
+
         "scroll" => {
             let horizontal = parse_int(args.next(), "horizontal");
             let vertical = parse_int(args.next(), "vertical");
@@ -156,6 +171,7 @@ fn exit_with_usage() -> ! {
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- click <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- double-click <image-x> <image-y>");
+    eprintln!("  cargo run --example cli -- drag <from-x> <from-y> <to-x> <to-y>");
     eprintln!("  cargo run --example cli -- scroll <horizontal> <vertical>");
     eprintln!("  cargo run --example cli -- key <key>");
     eprintln!("  cargo run --example cli -- type <text>");

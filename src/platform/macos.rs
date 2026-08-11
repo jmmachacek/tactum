@@ -24,6 +24,8 @@ unsafe extern "C" {
 
 pub(crate) struct Computer;
 
+const INPUT_EVENT_DELAY: Duration = Duration::from_millis(20);
+
 fn input_permission_granted() -> bool {
     // AXIsProcessTrusted has no arguments and returns the macOS Boolean type.
     unsafe { AXIsProcessTrusted() != 0 }
@@ -101,7 +103,7 @@ impl Computer {
         let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
             .map_err(|_| Error::OperationFailed)?;
         self.post_mouse_click(source.clone(), point, 1)?;
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(INPUT_EVENT_DELAY);
         self.post_mouse_click(source, point, 2)
     }
 
@@ -150,6 +152,43 @@ impl Computer {
         .map_err(|_| Error::OperationFailed)?;
 
         event.post(CGEventTapLocation::HID);
+        Ok(())
+    }
+
+    pub(crate) fn drag(&self, from: Point, to: Point) -> Result<()> {
+        if !input_permission_granted() {
+            return Err(Error::PermissionDenied);
+        }
+
+        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+            .map_err(|_| Error::OperationFailed)?;
+        let down = CGEvent::new_mouse_event(
+            source.clone(),
+            CGEventType::LeftMouseDown,
+            CGPoint::new(from.x(), from.y()),
+            CGMouseButton::Left,
+        )
+        .map_err(|_| Error::OperationFailed)?;
+        let dragged = CGEvent::new_mouse_event(
+            source.clone(),
+            CGEventType::LeftMouseDragged,
+            CGPoint::new(to.x(), to.y()),
+            CGMouseButton::Left,
+        )
+        .map_err(|_| Error::OperationFailed)?;
+        let up = CGEvent::new_mouse_event(
+            source,
+            CGEventType::LeftMouseUp,
+            CGPoint::new(to.x(), to.y()),
+            CGMouseButton::Left,
+        )
+        .map_err(|_| Error::OperationFailed)?;
+
+        down.post(CGEventTapLocation::HID);
+        thread::sleep(INPUT_EVENT_DELAY);
+        dragged.post(CGEventTapLocation::HID);
+        thread::sleep(INPUT_EVENT_DELAY);
+        up.post(CGEventTapLocation::HID);
         Ok(())
     }
 

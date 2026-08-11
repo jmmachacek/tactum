@@ -19,6 +19,10 @@ impl Computer {
         Err(Error::UnsupportedPlatform)
     }
 
+    pub(crate) fn drag(&self, _from: Point, _to: Point) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
     pub(crate) fn scroll(&self, _horizontal: i32, _vertical: i32) -> Result<()> {
         Err(Error::UnsupportedPlatform)
     }

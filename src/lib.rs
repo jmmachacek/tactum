@@ -113,6 +113,11 @@ impl Computer {
         self.platform.move_to(point)
     }
 
+    /// Drags the primary mouse button from `from` to `to`.
+    pub fn drag(&self, from: Point, to: Point) -> Result<()> {
+        self.platform.drag(from, to)
+    }
+
     /// Scrolls the focused target by signed logical deltas.
     ///
     /// Positive horizontal values scroll right; positive vertical values scroll up.
