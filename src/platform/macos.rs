@@ -21,7 +21,7 @@ unsafe extern "C" {
 
 pub(crate) struct Computer;
 
-const INPUT_EVENT_DELAY: Duration = Duration::from_millis(20);
+const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
 
 fn input_permission_granted() -> bool {
     // AXIsProcessTrusted has no arguments and returns the macOS Boolean type.
