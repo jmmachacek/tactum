@@ -244,20 +244,32 @@ impl Computer {
         self.screenshot_display_id(Some(display.id))
     }
 
+    /// Captures the entire virtual desktop as a PNG image.
+    ///
+    /// Displays with different pixel densities are normalized to the highest
+    /// active display scale. Areas between displays are black.
+    pub fn screenshot_all_displays(&self) -> Result<Screenshot> {
+        Ok(self.screenshot_from_captured(self.platform.screenshot_all_displays()?))
+    }
+
     fn screenshot_display_id(&self, display_id: Option<u64>) -> Result<Screenshot> {
         let captured = match display_id {
             Some(display_id) => self.platform.screenshot_display(display_id)?,
             None => self.platform.screenshot()?,
         };
 
-        Ok(Screenshot {
+        Ok(self.screenshot_from_captured(captured))
+    }
+
+    fn screenshot_from_captured(&self, captured: platform::CapturedScreenshot) -> Screenshot {
+        Screenshot {
             png: captured.png,
             width: captured.width,
             height: captured.height,
             desktop_origin: captured.desktop_origin,
             desktop_width: captured.desktop_width,
             desktop_height: captured.desktop_height,
-        })
+        }
     }
 }
 
@@ -379,6 +391,23 @@ mod tests {
         assert_eq!(
             screenshot.to_desktop_point(200.0, 0.0),
             Err(Error::InvalidPoint)
+        );
+    }
+
+    #[test]
+    fn virtual_desktop_screenshot_maps_across_display_boundaries() {
+        let screenshot = Screenshot {
+            png: Vec::new(),
+            width: 300,
+            height: 100,
+            desktop_origin: Point::new(-100.0, 0.0).unwrap(),
+            desktop_width: 300.0,
+            desktop_height: 100.0,
+        };
+
+        assert_eq!(
+            screenshot.to_desktop_point(100.0, 50.0),
+            Ok(Point::new(0.0, 50.0).unwrap())
         );
     }
 

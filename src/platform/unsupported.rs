@@ -73,4 +73,8 @@ impl Computer {
     pub(crate) fn screenshot_display(&self, _id: u64) -> Result<CapturedScreenshot> {
         Err(Error::UnsupportedPlatform)
     }
+
+    pub(crate) fn screenshot_all_displays(&self) -> Result<CapturedScreenshot> {
+        Err(Error::UnsupportedPlatform)
+    }
 }

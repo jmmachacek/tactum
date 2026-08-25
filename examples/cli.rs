@@ -63,6 +63,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             fs::write(path, screenshot.png())?;
         }
 
+        "screenshot-all-displays" => {
+            let Some(path) = args.next() else {
+                exit_with_usage();
+            };
+            if args.next().is_some() {
+                exit_with_usage();
+            }
+
+            let screenshot = computer.screenshot_all_displays()?;
+            fs::write(path, screenshot.png())?;
+        }
+
         "move" => {
             let x = parse_coordinate(args.next(), "x");
             let y = parse_coordinate(args.next(), "y");
@@ -266,6 +278,7 @@ fn exit_with_usage() -> ! {
     eprintln!("  cargo run --example cli -- screenshot <path>");
     eprintln!("  cargo run --example cli -- displays");
     eprintln!("  cargo run --example cli -- screenshot-display <id> <path>");
+    eprintln!("  cargo run --example cli -- screenshot-all-displays <path>");
     eprintln!("  cargo run --example cli -- move <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- click <button> <image-x> <image-y>");
     eprintln!("  cargo run --example cli -- double-click <button> <image-x> <image-y>");

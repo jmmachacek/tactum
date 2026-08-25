@@ -28,6 +28,15 @@ pub(crate) struct Computer;
 
 const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
 
+struct CapturedPixels {
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    desktop_origin: Point,
+    desktop_width: f64,
+    desktop_height: f64,
+}
+
 fn input_permission_granted() -> bool {
     // AXIsProcessTrusted has no arguments and returns the macOS Boolean type.
     unsafe { AXIsProcessTrusted() != 0 }
@@ -368,11 +377,108 @@ impl Computer {
         self.capture_screenshot(CGDisplay::new(id))
     }
 
+    pub(crate) fn screenshot_all_displays(&self) -> Result<CapturedScreenshot> {
+        if !ScreenCaptureAccess.preflight() {
+            return Err(Error::PermissionDenied);
+        }
+
+        let captures: Vec<_> = CGDisplay::active_displays()
+            .map_err(|_| Error::OperationFailed)?
+            .into_iter()
+            .map(|id| self.capture_pixels(CGDisplay::new(id)))
+            .collect::<Result<_>>()?;
+        let first = captures.first().ok_or(Error::OperationFailed)?;
+        let (min_x, min_y, max_x, max_y, scale) = captures.iter().skip(1).fold(
+            (
+                first.desktop_origin.x(),
+                first.desktop_origin.y(),
+                first.desktop_origin.x() + first.desktop_width,
+                first.desktop_origin.y() + first.desktop_height,
+                (first.width as f64 / first.desktop_width)
+                    .max(first.height as f64 / first.desktop_height),
+            ),
+            |(min_x, min_y, max_x, max_y, scale), capture| {
+                (
+                    min_x.min(capture.desktop_origin.x()),
+                    min_y.min(capture.desktop_origin.y()),
+                    max_x.max(capture.desktop_origin.x() + capture.desktop_width),
+                    max_y.max(capture.desktop_origin.y() + capture.desktop_height),
+                    scale
+                        .max(capture.width as f64 / capture.desktop_width)
+                        .max(capture.height as f64 / capture.desktop_height),
+                )
+            },
+        );
+        let desktop_width = max_x - min_x;
+        let desktop_height = max_y - min_y;
+        let width = pixels_for_desktop_length(desktop_width, scale)?;
+        let height = pixels_for_desktop_length(desktop_height, scale)?;
+        let pixel_count = usize::try_from(width)
+            .ok()
+            .and_then(|width| width.checked_mul(height as usize))
+            .ok_or(Error::OperationFailed)?;
+        let mut rgba = vec![[0, 0, 0, u8::MAX]; pixel_count].into_flattened();
+
+        for capture in &captures {
+            let x = pixels_for_desktop_length(capture.desktop_origin.x() - min_x, scale)?;
+            let y = pixels_for_desktop_length(capture.desktop_origin.y() - min_y, scale)?;
+            let right = pixels_for_desktop_length(
+                capture.desktop_origin.x() + capture.desktop_width - min_x,
+                scale,
+            )?;
+            let bottom = pixels_for_desktop_length(
+                capture.desktop_origin.y() + capture.desktop_height - min_y,
+                scale,
+            )?;
+            let capture_width = right.checked_sub(x).ok_or(Error::OperationFailed)?;
+            let capture_height = bottom.checked_sub(y).ok_or(Error::OperationFailed)?;
+            if capture_width == 0 || capture_height == 0 || right > width || bottom > height {
+                return Err(Error::OperationFailed);
+            }
+
+            for target_y in 0..capture_height {
+                let source_y =
+                    target_y as usize * capture.height as usize / capture_height as usize;
+                for target_x in 0..capture_width {
+                    let source_x =
+                        target_x as usize * capture.width as usize / capture_width as usize;
+                    let source = (source_y * capture.width as usize + source_x) * 4;
+                    let target = ((y as usize + target_y as usize) * width as usize
+                        + x as usize
+                        + target_x as usize)
+                        * 4;
+                    rgba[target..target + 4].copy_from_slice(&capture.rgba[source..source + 4]);
+                }
+            }
+        }
+
+        encode_screenshot(
+            rgba,
+            width,
+            height,
+            Point::new(min_x, min_y).map_err(|_| Error::OperationFailed)?,
+            desktop_width,
+            desktop_height,
+        )
+    }
+
     fn capture_screenshot(&self, display: CGDisplay) -> Result<CapturedScreenshot> {
         if !ScreenCaptureAccess.preflight() {
             return Err(Error::PermissionDenied);
         }
 
+        let capture = self.capture_pixels(display)?;
+        encode_screenshot(
+            capture.rgba,
+            capture.width,
+            capture.height,
+            capture.desktop_origin,
+            capture.desktop_width,
+            capture.desktop_height,
+        )
+    }
+
+    fn capture_pixels(&self, display: CGDisplay) -> Result<CapturedPixels> {
         let display_bounds = display.bounds();
         let image = display.image().ok_or(Error::OperationFailed)?;
         let width = u32::try_from(image.width()).map_err(|_| Error::OperationFailed)?;
@@ -400,19 +506,14 @@ impl Computer {
         for row in data.chunks_exact(bytes_per_row).take(height as usize) {
             rgba.extend_from_slice(&row[..row_length]);
         }
-        for pixel in rgba.chunks_exact_mut(4) {
+        for pixel in rgba.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
         }
 
-        let mut png = Vec::new();
-        PngEncoder::new(&mut png)
-            .write_image(&rgba, width, height, ExtendedColorType::Rgba8)
-            .map_err(|_| Error::OperationFailed)?;
-
         let desktop_origin = Point::new(display_bounds.origin.x, display_bounds.origin.y)
             .map_err(|_| Error::OperationFailed)?;
-        Ok(CapturedScreenshot {
-            png,
+        Ok(CapturedPixels {
+            rgba,
             width,
             height,
             desktop_origin,
@@ -420,4 +521,40 @@ impl Computer {
             desktop_height: display_bounds.size.height,
         })
     }
+}
+
+fn pixels_for_desktop_length(length: f64, scale: f64) -> Result<u32> {
+    if !length.is_finite() || !scale.is_finite() || length < 0.0 || scale <= 0.0 {
+        return Err(Error::OperationFailed);
+    }
+
+    let pixels = (length * scale).round();
+    if pixels > u32::MAX as f64 {
+        return Err(Error::OperationFailed);
+    }
+
+    Ok(pixels as u32)
+}
+
+fn encode_screenshot(
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    desktop_origin: Point,
+    desktop_width: f64,
+    desktop_height: f64,
+) -> Result<CapturedScreenshot> {
+    let mut png = Vec::new();
+    PngEncoder::new(&mut png)
+        .write_image(&rgba, width, height, ExtendedColorType::Rgba8)
+        .map_err(|_| Error::OperationFailed)?;
+
+    Ok(CapturedScreenshot {
+        png,
+        width,
+        height,
+        desktop_origin,
+        desktop_width,
+        desktop_height,
+    })
 }
