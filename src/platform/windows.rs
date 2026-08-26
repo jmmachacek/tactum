@@ -3,12 +3,19 @@ use std::{ffi::c_void, mem::size_of, thread, time::Duration};
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 
 use windows_sys::Win32::{
-    Foundation::{BOOL, LPARAM, RECT},
+    Foundation::{BOOL, GlobalFree, HGLOBAL, LPARAM, RECT},
     Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, CreateCompatibleDC,
         CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, EnumDisplayMonitors, GetDC,
         GetMonitorInfoW, HDC, HGDIOBJ, HMONITOR, MONITORINFO, RGBQUAD, ReleaseDC, SRCCOPY,
         SelectObject,
+    },
+    System::{
+        DataExchange::{
+            CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+            OpenClipboard, SetClipboardData,
+        },
+        Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock},
     },
     UI::{
         Input::KeyboardAndMouse::{
@@ -30,6 +37,24 @@ use crate::{
 pub(crate) struct Computer;
 
 const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
+const CF_UNICODETEXT: u32 = 13;
+
+struct OpenClipboardGuard;
+
+impl OpenClipboardGuard {
+    fn open() -> Result<Self> {
+        if unsafe { OpenClipboard(std::ptr::null_mut()) } == 0 {
+            return Err(Error::OperationFailed);
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for OpenClipboardGuard {
+    fn drop(&mut self) {
+        unsafe { CloseClipboard() };
+    }
+}
 
 struct DisplayCollector {
     displays: Vec<CapturedDisplay>,
@@ -501,11 +526,79 @@ impl Computer {
     }
 
     pub(crate) fn read_clipboard(&self) -> Result<Option<String>> {
-        Err(Error::UnsupportedPlatform)
+        let _clipboard = OpenClipboardGuard::open()?;
+        if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) } == 0 {
+            return Ok(None);
+        }
+
+        let memory = unsafe { GetClipboardData(CF_UNICODETEXT) } as HGLOBAL;
+        if memory.is_null() {
+            return Err(Error::OperationFailed);
+        }
+        let byte_len = unsafe { GlobalSize(memory) };
+        if byte_len < size_of::<u16>() || byte_len % size_of::<u16>() != 0 {
+            return Err(Error::OperationFailed);
+        }
+        let data = unsafe { GlobalLock(memory) }.cast::<u16>();
+        if data.is_null() {
+            return Err(Error::OperationFailed);
+        }
+
+        let code_units = unsafe { std::slice::from_raw_parts(data, byte_len / size_of::<u16>()) };
+        let text = code_units
+            .iter()
+            .position(|&code_unit| code_unit == 0)
+            .ok_or(Error::OperationFailed)
+            .and_then(|end| {
+                String::from_utf16(&code_units[..end]).map_err(|_| Error::OperationFailed)
+            });
+
+        unsafe { GlobalUnlock(memory) };
+
+        text.map(Some)
     }
 
-    pub(crate) fn write_clipboard(&self, _text: &str) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn write_clipboard(&self, text: &str) -> Result<()> {
+        if text.contains('\0') {
+            return Err(Error::OperationFailed);
+        }
+
+        let utf16: Vec<_> = text.encode_utf16().chain([0]).collect();
+        let byte_len = utf16
+            .len()
+            .checked_mul(size_of::<u16>())
+            .ok_or(Error::OperationFailed)?;
+        let memory = unsafe { GlobalAlloc(GMEM_MOVEABLE, byte_len) };
+        if memory.is_null() {
+            return Err(Error::OperationFailed);
+        }
+        let data = unsafe { GlobalLock(memory) }.cast::<u16>();
+        if data.is_null() {
+            unsafe { GlobalFree(memory) };
+            return Err(Error::OperationFailed);
+        }
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(utf16.as_ptr(), data, utf16.len());
+            GlobalUnlock(memory);
+        }
+
+        let result = (|| {
+            let _clipboard = OpenClipboardGuard::open()?;
+            if unsafe { EmptyClipboard() } == 0 {
+                return Err(Error::OperationFailed);
+            }
+            if unsafe { SetClipboardData(CF_UNICODETEXT, memory) }.is_null() {
+                return Err(Error::OperationFailed);
+            }
+            Ok(())
+        })();
+
+        if result.is_err() {
+            unsafe { GlobalFree(memory) };
+        }
+
+        result
     }
 
     pub(crate) fn displays(&self) -> Result<Vec<CapturedDisplay>> {
