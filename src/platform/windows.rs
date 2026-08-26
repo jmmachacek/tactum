@@ -18,6 +18,10 @@ use windows_sys::Win32::{
         Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock},
     },
     UI::{
+        HiDpi::{
+            DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            SetThreadDpiAwarenessContext,
+        },
         Input::KeyboardAndMouse::{
             INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
             KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, KEYEVENTF_UNICODE, MOUSE_EVENT_FLAGS,
@@ -40,6 +44,25 @@ const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
 const CF_UNICODETEXT: u32 = 13;
 
 struct OpenClipboardGuard;
+
+struct DpiAwarenessGuard(DPI_AWARENESS_CONTEXT);
+
+impl DpiAwarenessGuard {
+    fn enter() -> Result<Self> {
+        let previous =
+            unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+        if previous.is_null() {
+            return Err(Error::OperationFailed);
+        }
+        Ok(Self(previous))
+    }
+}
+
+impl Drop for DpiAwarenessGuard {
+    fn drop(&mut self) {
+        unsafe { SetThreadDpiAwarenessContext(self.0) };
+    }
+}
 
 impl OpenClipboardGuard {
     fn open() -> Result<Self> {
@@ -195,6 +218,7 @@ fn cursor_position(point: Point) -> Result<(i32, i32)> {
 }
 
 fn set_cursor_position((x, y): (i32, i32)) -> Result<()> {
+    let _dpi_awareness = DpiAwarenessGuard::enter()?;
     if unsafe { SetCursorPos(x, y) } == 0 {
         return Err(Error::OperationFailed);
     }
@@ -271,6 +295,7 @@ unsafe extern "system" fn collect_display(
 }
 
 fn enumerate_displays() -> Result<(Vec<CapturedDisplay>, u64)> {
+    let _dpi_awareness = DpiAwarenessGuard::enter()?;
     let mut collector = DisplayCollector {
         displays: Vec::new(),
         primary_display: None,
@@ -294,6 +319,7 @@ fn enumerate_displays() -> Result<(Vec<CapturedDisplay>, u64)> {
 }
 
 fn capture_rectangle(left: i32, top: i32, width: i32, height: i32) -> Result<CapturedScreenshot> {
+    let _dpi_awareness = DpiAwarenessGuard::enter()?;
     if width <= 0 || height <= 0 {
         return Err(Error::OperationFailed);
     }

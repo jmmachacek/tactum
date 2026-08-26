@@ -126,11 +126,17 @@ impl Display {
     }
 
     /// Returns the horizontal pixel scale relative to desktop coordinates.
+    ///
+    /// This is `1.0` on platforms whose desktop coordinates are physical pixels,
+    /// even when operating-system UI scaling is enabled.
     pub const fn scale_x(self) -> f64 {
         self.scale_x
     }
 
     /// Returns the vertical pixel scale relative to desktop coordinates.
+    ///
+    /// This is `1.0` on platforms whose desktop coordinates are physical pixels,
+    /// even when operating-system UI scaling is enabled.
     pub const fn scale_y(self) -> f64 {
         self.scale_y
     }
