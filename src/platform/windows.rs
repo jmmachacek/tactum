@@ -337,12 +337,16 @@ impl Computer {
         send_mouse_inputs(&[mouse_input(up)])
     }
 
-    pub(crate) fn mouse_down(&self, _button: MouseButton, _point: Point) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn mouse_down(&self, button: MouseButton, point: Point) -> Result<()> {
+        move_cursor(point)?;
+        let (down, _) = mouse_events(button);
+        send_mouse_inputs(&[mouse_input(down)])
     }
 
-    pub(crate) fn mouse_up(&self, _button: MouseButton, _point: Point) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn mouse_up(&self, button: MouseButton, point: Point) -> Result<()> {
+        move_cursor(point)?;
+        let (_, up) = mouse_events(button);
+        send_mouse_inputs(&[mouse_input(up)])
     }
 
     pub(crate) fn scroll(&self, _horizontal: i32, _vertical: i32) -> Result<()> {
