@@ -57,6 +57,35 @@ fn mouse_input(flags: MOUSE_EVENT_FLAGS) -> INPUT {
     }
 }
 
+fn move_cursor(point: Point) -> Result<()> {
+    if point.x() < i32::MIN as f64
+        || point.x() > i32::MAX as f64
+        || point.y() < i32::MIN as f64
+        || point.y() > i32::MAX as f64
+    {
+        return Err(Error::InvalidPoint);
+    }
+
+    if unsafe { SetCursorPos(point.x().round() as i32, point.y().round() as i32) } == 0 {
+        return Err(Error::OperationFailed);
+    }
+    Ok(())
+}
+
+fn send_mouse_inputs(inputs: &[INPUT]) -> Result<()> {
+    let sent = unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            size_of::<INPUT>() as i32,
+        )
+    };
+    if sent != inputs.len() as u32 {
+        return Err(Error::OperationFailed);
+    }
+    Ok(())
+}
+
 unsafe extern "system" fn collect_display(
     monitor: HMONITOR,
     _: HDC,
@@ -262,38 +291,20 @@ impl Computer {
     }
 
     pub(crate) fn click(&self, button: MouseButton, point: Point) -> Result<()> {
-        if point.x() < i32::MIN as f64
-            || point.x() > i32::MAX as f64
-            || point.y() < i32::MIN as f64
-            || point.y() > i32::MAX as f64
-        {
-            return Err(Error::InvalidPoint);
-        }
-
-        let x = point.x().round() as i32;
-        let y = point.y().round() as i32;
-        if unsafe { SetCursorPos(x, y) } == 0 {
-            return Err(Error::OperationFailed);
-        }
-
+        move_cursor(point)?;
         let (down, up) = mouse_events(button);
-        let inputs = [mouse_input(down), mouse_input(up)];
-        let sent = unsafe {
-            SendInput(
-                inputs.len() as u32,
-                inputs.as_ptr(),
-                size_of::<INPUT>() as i32,
-            )
-        };
-        if sent != inputs.len() as u32 {
-            return Err(Error::OperationFailed);
-        }
-
-        Ok(())
+        send_mouse_inputs(&[mouse_input(down), mouse_input(up)])
     }
 
-    pub(crate) fn double_click(&self, _button: MouseButton, _point: Point) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn double_click(&self, button: MouseButton, point: Point) -> Result<()> {
+        move_cursor(point)?;
+        let (down, up) = mouse_events(button);
+        send_mouse_inputs(&[
+            mouse_input(down),
+            mouse_input(up),
+            mouse_input(down),
+            mouse_input(up),
+        ])
     }
 
     pub(crate) fn move_to(&self, _point: Point) -> Result<()> {
