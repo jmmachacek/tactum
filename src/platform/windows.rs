@@ -12,11 +12,11 @@ use windows_sys::Win32::{
     },
     UI::{
         Input::KeyboardAndMouse::{
-            INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_LEFTDOWN,
-            MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
-            MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEINPUT, SendInput,
+            INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_HWHEEL,
+            MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+            MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, SendInput,
         },
-        WindowsAndMessaging::{MONITORINFOF_PRIMARY, SetCursorPos},
+        WindowsAndMessaging::{MONITORINFOF_PRIMARY, SetCursorPos, WHEEL_DELTA},
     },
 };
 
@@ -44,13 +44,17 @@ fn mouse_events(button: MouseButton) -> (MOUSE_EVENT_FLAGS, MOUSE_EVENT_FLAGS) {
 }
 
 fn mouse_input(flags: MOUSE_EVENT_FLAGS) -> INPUT {
+    mouse_input_with_data(flags, 0)
+}
+
+fn mouse_input_with_data(flags: MOUSE_EVENT_FLAGS, mouse_data: u32) -> INPUT {
     INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
             mi: MOUSEINPUT {
                 dx: 0,
                 dy: 0,
-                mouseData: 0,
+                mouseData: mouse_data,
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: 0,
@@ -349,8 +353,26 @@ impl Computer {
         send_mouse_inputs(&[mouse_input(up)])
     }
 
-    pub(crate) fn scroll(&self, _horizontal: i32, _vertical: i32) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn scroll(&self, horizontal: i32, vertical: i32) -> Result<()> {
+        let mut inputs = Vec::with_capacity(2);
+        if vertical != 0 {
+            let delta = vertical
+                .checked_mul(WHEEL_DELTA as i32)
+                .ok_or(Error::OperationFailed)?;
+            inputs.push(mouse_input_with_data(MOUSEEVENTF_WHEEL, delta as u32));
+        }
+        if horizontal != 0 {
+            let delta = horizontal
+                .checked_mul(WHEEL_DELTA as i32)
+                .ok_or(Error::OperationFailed)?;
+            inputs.push(mouse_input_with_data(MOUSEEVENTF_HWHEEL, delta as u32));
+        }
+
+        if inputs.is_empty() {
+            Ok(())
+        } else {
+            send_mouse_inputs(&inputs)
+        }
     }
 
     pub(crate) fn key_press(&self, _key: Key) -> Result<()> {
