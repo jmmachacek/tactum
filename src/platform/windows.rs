@@ -12,7 +12,8 @@ use windows_sys::Win32::{
     },
     UI::{
         Input::KeyboardAndMouse::{
-            INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_HWHEEL,
+            INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+            KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_HWHEEL,
             MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
             MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, SendInput,
         },
@@ -63,6 +64,79 @@ fn mouse_input_with_data(flags: MOUSE_EVENT_FLAGS, mouse_data: u32) -> INPUT {
     }
 }
 
+fn key_scan_code(key: Key) -> (u16, bool) {
+    match key {
+        Key::A => (0x1e, false),
+        Key::B => (0x30, false),
+        Key::C => (0x2e, false),
+        Key::D => (0x20, false),
+        Key::E => (0x12, false),
+        Key::F => (0x21, false),
+        Key::G => (0x22, false),
+        Key::H => (0x23, false),
+        Key::I => (0x17, false),
+        Key::J => (0x24, false),
+        Key::K => (0x25, false),
+        Key::L => (0x26, false),
+        Key::M => (0x32, false),
+        Key::N => (0x31, false),
+        Key::O => (0x18, false),
+        Key::P => (0x19, false),
+        Key::Q => (0x10, false),
+        Key::R => (0x13, false),
+        Key::S => (0x1f, false),
+        Key::T => (0x14, false),
+        Key::U => (0x16, false),
+        Key::V => (0x2f, false),
+        Key::W => (0x11, false),
+        Key::X => (0x2d, false),
+        Key::Y => (0x15, false),
+        Key::Z => (0x2c, false),
+        Key::Backspace => (0x0e, false),
+        Key::Tab => (0x0f, false),
+        Key::Return => (0x1c, false),
+        Key::Escape => (0x01, false),
+        Key::Space => (0x39, false),
+        Key::Delete => (0x53, true),
+        Key::Home => (0x47, true),
+        Key::End => (0x4f, true),
+        Key::PageUp => (0x49, true),
+        Key::PageDown => (0x51, true),
+        Key::Left => (0x4b, true),
+        Key::Right => (0x4d, true),
+        Key::Down => (0x50, true),
+        Key::Up => (0x48, true),
+        Key::Shift => (0x2a, false),
+        Key::Control => (0x1d, false),
+        Key::Option => (0x38, false),
+        Key::Command => (0x5b, true),
+    }
+}
+
+fn key_input(key: Key, key_down: bool) -> INPUT {
+    let (scan_code, extended) = key_scan_code(key);
+    let mut flags = KEYEVENTF_SCANCODE;
+    if extended {
+        flags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    if !key_down {
+        flags |= KEYEVENTF_KEYUP;
+    }
+
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: 0,
+                wScan: scan_code,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
 fn cursor_position(point: Point) -> Result<(i32, i32)> {
     if point.x() < i32::MIN as f64
         || point.x() > i32::MAX as f64
@@ -86,7 +160,7 @@ fn move_cursor(point: Point) -> Result<()> {
     set_cursor_position(cursor_position(point)?)
 }
 
-fn send_mouse_inputs(inputs: &[INPUT]) -> Result<()> {
+fn send_inputs(inputs: &[INPUT]) -> Result<()> {
     let sent = unsafe {
         SendInput(
             inputs.len() as u32,
@@ -307,13 +381,13 @@ impl Computer {
     pub(crate) fn click(&self, button: MouseButton, point: Point) -> Result<()> {
         move_cursor(point)?;
         let (down, up) = mouse_events(button);
-        send_mouse_inputs(&[mouse_input(down), mouse_input(up)])
+        send_inputs(&[mouse_input(down), mouse_input(up)])
     }
 
     pub(crate) fn double_click(&self, button: MouseButton, point: Point) -> Result<()> {
         move_cursor(point)?;
         let (down, up) = mouse_events(button);
-        send_mouse_inputs(&[
+        send_inputs(&[
             mouse_input(down),
             mouse_input(up),
             mouse_input(down),
@@ -331,26 +405,26 @@ impl Computer {
         let (down, up) = mouse_events(button);
 
         set_cursor_position(from)?;
-        send_mouse_inputs(&[mouse_input(down)])?;
+        send_inputs(&[mouse_input(down)])?;
         thread::sleep(INPUT_EVENT_DELAY);
         if let Err(error) = set_cursor_position(to) {
-            let _ = send_mouse_inputs(&[mouse_input(up)]);
+            let _ = send_inputs(&[mouse_input(up)]);
             return Err(error);
         }
         thread::sleep(INPUT_EVENT_DELAY);
-        send_mouse_inputs(&[mouse_input(up)])
+        send_inputs(&[mouse_input(up)])
     }
 
     pub(crate) fn mouse_down(&self, button: MouseButton, point: Point) -> Result<()> {
         move_cursor(point)?;
         let (down, _) = mouse_events(button);
-        send_mouse_inputs(&[mouse_input(down)])
+        send_inputs(&[mouse_input(down)])
     }
 
     pub(crate) fn mouse_up(&self, button: MouseButton, point: Point) -> Result<()> {
         move_cursor(point)?;
         let (_, up) = mouse_events(button);
-        send_mouse_inputs(&[mouse_input(up)])
+        send_inputs(&[mouse_input(up)])
     }
 
     pub(crate) fn scroll(&self, horizontal: i32, vertical: i32) -> Result<()> {
@@ -371,20 +445,20 @@ impl Computer {
         if inputs.is_empty() {
             Ok(())
         } else {
-            send_mouse_inputs(&inputs)
+            send_inputs(&inputs)
         }
     }
 
-    pub(crate) fn key_press(&self, _key: Key) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn key_press(&self, key: Key) -> Result<()> {
+        send_inputs(&[key_input(key, true), key_input(key, false)])
     }
 
-    pub(crate) fn key_down(&self, _key: Key) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn key_down(&self, key: Key) -> Result<()> {
+        send_inputs(&[key_input(key, true)])
     }
 
-    pub(crate) fn key_up(&self, _key: Key) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn key_up(&self, key: Key) -> Result<()> {
+        send_inputs(&[key_input(key, false)])
     }
 
     pub(crate) fn type_text(&self, _text: &str) -> Result<()> {
