@@ -66,10 +66,13 @@ impl Drop for DpiAwarenessGuard {
 
 impl OpenClipboardGuard {
     fn open() -> Result<Self> {
-        if unsafe { OpenClipboard(std::ptr::null_mut()) } == 0 {
-            return Err(Error::OperationFailed);
+        for _ in 0..10 {
+            if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 {
+                return Ok(Self);
+            }
+            thread::sleep(Duration::from_millis(10));
         }
-        Ok(Self)
+        Err(Error::OperationFailed)
     }
 }
 
@@ -687,5 +690,139 @@ impl Computer {
             right.checked_sub(left).ok_or(Error::OperationFailed)?,
             bottom.checked_sub(top).ok_or(Error::OperationFailed)?,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashSet, sync::Mutex};
+
+    use image::GenericImageView;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE,
+        KEYEVENTF_UNICODE,
+    };
+
+    use super::{
+        Computer, EmptyClipboard, Key, OpenClipboardGuard, enumerate_displays, key_input,
+        unicode_input,
+    };
+    use crate::platform::{CapturedDisplay, CapturedScreenshot};
+
+    static CLIPBOARD_TEST: Mutex<()> = Mutex::new(());
+
+    struct ClipboardRestore {
+        original: Option<String>,
+    }
+
+    impl Drop for ClipboardRestore {
+        fn drop(&mut self) {
+            let computer = Computer;
+            if let Some(text) = &self.original {
+                let _ = computer.write_clipboard(text);
+            } else if let Ok(_clipboard) = OpenClipboardGuard::open() {
+                unsafe { EmptyClipboard() };
+            }
+        }
+    }
+
+    fn assert_valid_png(screenshot: &CapturedScreenshot) {
+        let image = image::load_from_memory(&screenshot.png).unwrap();
+        assert_eq!(image.dimensions(), (screenshot.width, screenshot.height));
+        assert_eq!(&screenshot.png[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    fn assert_matches_display(screenshot: &CapturedScreenshot, display: &CapturedDisplay) {
+        assert_eq!(screenshot.desktop_origin, display.origin);
+        assert_eq!(screenshot.desktop_width, display.width);
+        assert_eq!(screenshot.desktop_height, display.height);
+        assert_valid_png(screenshot);
+    }
+
+    #[test]
+    fn enumerates_active_displays() {
+        let (displays, primary_display) = enumerate_displays().unwrap();
+        let display_ids: HashSet<_> = displays.iter().map(|display| display.id).collect();
+
+        assert!(!displays.is_empty());
+        assert!(displays.iter().any(|display| display.id == primary_display));
+        assert_eq!(display_ids.len(), displays.len());
+        for display in displays {
+            assert!(display.width > 0.0);
+            assert!(display.height > 0.0);
+            assert_eq!(display.scale_x, 1.0);
+            assert_eq!(display.scale_y, 1.0);
+        }
+    }
+
+    #[test]
+    fn captures_primary_selected_and_virtual_desktop() {
+        let computer = Computer;
+        let (displays, primary_display) = enumerate_displays().unwrap();
+        let primary = displays
+            .iter()
+            .find(|display| display.id == primary_display)
+            .unwrap();
+
+        let screenshot = computer.screenshot().unwrap();
+        assert_matches_display(&screenshot, primary);
+
+        let selected = computer.screenshot_display(displays[0].id).unwrap();
+        assert_matches_display(&selected, &displays[0]);
+
+        let all = computer.screenshot_all_displays().unwrap();
+        let first = &displays[0];
+        let (min_x, min_y, max_x, max_y) = displays.iter().skip(1).fold(
+            (
+                first.origin.x(),
+                first.origin.y(),
+                first.origin.x() + first.width,
+                first.origin.y() + first.height,
+            ),
+            |(min_x, min_y, max_x, max_y), display| {
+                (
+                    min_x.min(display.origin.x()),
+                    min_y.min(display.origin.y()),
+                    max_x.max(display.origin.x() + display.width),
+                    max_y.max(display.origin.y() + display.height),
+                )
+            },
+        );
+        assert_eq!(all.desktop_origin.x(), min_x);
+        assert_eq!(all.desktop_origin.y(), min_y);
+        assert_eq!(all.desktop_width, max_x - min_x);
+        assert_eq!(all.desktop_height, max_y - min_y);
+        assert_valid_png(&all);
+    }
+
+    #[test]
+    fn clipboard_round_trips_unicode_text() {
+        let _lock = CLIPBOARD_TEST.lock().unwrap();
+        let computer = Computer;
+        let _restore = ClipboardRestore {
+            original: computer.read_clipboard().unwrap(),
+        };
+        let text = "Tactum clipboard test\n世界 🚀";
+
+        computer.write_clipboard(text).unwrap();
+        assert_eq!(computer.read_clipboard().unwrap().as_deref(), Some(text));
+    }
+
+    #[test]
+    fn creates_scan_code_and_unicode_keyboard_inputs() {
+        let delete = key_input(Key::Delete, false);
+        assert_eq!(delete.r#type, INPUT_KEYBOARD);
+        let delete = unsafe { delete.Anonymous.ki };
+        assert_eq!(delete.wScan, 0x53);
+        assert_eq!(
+            delete.dwFlags,
+            KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
+        );
+
+        let unicode = unicode_input('界' as u16, true);
+        assert_eq!(unicode.r#type, INPUT_KEYBOARD);
+        let unicode = unsafe { unicode.Anonymous.ki };
+        assert_eq!(unicode.wScan, '界' as u16);
+        assert_eq!(unicode.dwFlags, KEYEVENTF_UNICODE);
     }
 }
