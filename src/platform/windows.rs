@@ -13,9 +13,10 @@ use windows_sys::Win32::{
     UI::{
         Input::KeyboardAndMouse::{
             INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-            KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_HWHEEL,
-            MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
-            MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, SendInput,
+            KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, KEYEVENTF_UNICODE, MOUSE_EVENT_FLAGS,
+            MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+            MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
+            MOUSEINPUT, SendInput,
         },
         WindowsAndMessaging::{MONITORINFOF_PRIMARY, SetCursorPos, WHEEL_DELTA},
     },
@@ -130,6 +131,25 @@ fn key_input(key: Key, key_down: bool) -> INPUT {
                 wVk: 0,
                 wScan: scan_code,
                 dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+fn unicode_input(code_unit: u16, key_down: bool) -> INPUT {
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: 0,
+                wScan: code_unit,
+                dwFlags: if key_down {
+                    KEYEVENTF_UNICODE
+                } else {
+                    KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                },
                 time: 0,
                 dwExtraInfo: 0,
             },
@@ -461,8 +481,23 @@ impl Computer {
         send_inputs(&[key_input(key, false)])
     }
 
-    pub(crate) fn type_text(&self, _text: &str) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn type_text(&self, text: &str) -> Result<()> {
+        for character in text.chars() {
+            match character {
+                '\n' | '\r' => self.key_press(Key::Return)?,
+                '\t' => self.key_press(Key::Tab)?,
+                _ => {
+                    let mut utf16 = [0; 2];
+                    for &code_unit in character.encode_utf16(&mut utf16).iter() {
+                        send_inputs(&[
+                            unicode_input(code_unit, true),
+                            unicode_input(code_unit, false),
+                        ])?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn read_clipboard(&self) -> Result<Option<String>> {
