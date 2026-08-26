@@ -1,4 +1,4 @@
-use std::{ffi::c_void, mem::size_of};
+use std::{ffi::c_void, mem::size_of, thread, time::Duration};
 
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 
@@ -26,6 +26,8 @@ use crate::{
 };
 
 pub(crate) struct Computer;
+
+const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
 
 struct DisplayCollector {
     displays: Vec<CapturedDisplay>,
@@ -57,7 +59,7 @@ fn mouse_input(flags: MOUSE_EVENT_FLAGS) -> INPUT {
     }
 }
 
-fn move_cursor(point: Point) -> Result<()> {
+fn cursor_position(point: Point) -> Result<(i32, i32)> {
     if point.x() < i32::MIN as f64
         || point.x() > i32::MAX as f64
         || point.y() < i32::MIN as f64
@@ -66,10 +68,18 @@ fn move_cursor(point: Point) -> Result<()> {
         return Err(Error::InvalidPoint);
     }
 
-    if unsafe { SetCursorPos(point.x().round() as i32, point.y().round() as i32) } == 0 {
+    Ok((point.x().round() as i32, point.y().round() as i32))
+}
+
+fn set_cursor_position((x, y): (i32, i32)) -> Result<()> {
+    if unsafe { SetCursorPos(x, y) } == 0 {
         return Err(Error::OperationFailed);
     }
     Ok(())
+}
+
+fn move_cursor(point: Point) -> Result<()> {
+    set_cursor_position(cursor_position(point)?)
 }
 
 fn send_mouse_inputs(inputs: &[INPUT]) -> Result<()> {
@@ -307,12 +317,24 @@ impl Computer {
         ])
     }
 
-    pub(crate) fn move_to(&self, _point: Point) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn move_to(&self, point: Point) -> Result<()> {
+        move_cursor(point)
     }
 
-    pub(crate) fn drag(&self, _button: MouseButton, _from: Point, _to: Point) -> Result<()> {
-        Err(Error::UnsupportedPlatform)
+    pub(crate) fn drag(&self, button: MouseButton, from: Point, to: Point) -> Result<()> {
+        let from = cursor_position(from)?;
+        let to = cursor_position(to)?;
+        let (down, up) = mouse_events(button);
+
+        set_cursor_position(from)?;
+        send_mouse_inputs(&[mouse_input(down)])?;
+        thread::sleep(INPUT_EVENT_DELAY);
+        if let Err(error) = set_cursor_position(to) {
+            let _ = send_mouse_inputs(&[mouse_input(up)]);
+            return Err(error);
+        }
+        thread::sleep(INPUT_EVENT_DELAY);
+        send_mouse_inputs(&[mouse_input(up)])
     }
 
     pub(crate) fn mouse_down(&self, _button: MouseButton, _point: Point) -> Result<()> {
