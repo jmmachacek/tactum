@@ -487,20 +487,22 @@ fn compose_captures(mut captures: Vec<CapturedPixels>) -> Result<CapturedPixels>
     let mut min_y = first.desktop_origin.y();
     let mut max_x = min_x + first.desktop_width;
     let mut max_y = min_y + first.desktop_height;
-    let mut scale = capture_scale(first);
+    let (mut scale_x, mut scale_y) = capture_scale(first);
 
     for capture in captures.iter().skip(1) {
         min_x = min_x.min(capture.desktop_origin.x());
         min_y = min_y.min(capture.desktop_origin.y());
         max_x = max_x.max(capture.desktop_origin.x() + capture.desktop_width);
         max_y = max_y.max(capture.desktop_origin.y() + capture.desktop_height);
-        scale = scale.max(capture_scale(capture));
+        let (capture_scale_x, capture_scale_y) = capture_scale(capture);
+        scale_x = scale_x.max(capture_scale_x);
+        scale_y = scale_y.max(capture_scale_y);
     }
 
     let desktop_width = max_x - min_x;
     let desktop_height = max_y - min_y;
-    let width = pixels_for_desktop_length(desktop_width, scale)?;
-    let height = pixels_for_desktop_length(desktop_height, scale)?;
+    let width = pixels_for_desktop_length(desktop_width, scale_x)?;
+    let height = pixels_for_desktop_length(desktop_height, scale_y)?;
     let pixel_count = (width as usize)
         .checked_mul(height as usize)
         .ok_or(Error::OperationFailed)?;
@@ -508,7 +510,9 @@ fn compose_captures(mut captures: Vec<CapturedPixels>) -> Result<CapturedPixels>
     let mut rgba = vec![[0, 0, 0, u8::MAX]; pixel_count].into_flattened();
 
     for capture in &captures {
-        copy_capture(&mut rgba, width, height, min_x, min_y, scale, capture)?;
+        copy_capture(
+            &mut rgba, width, height, min_x, min_y, scale_x, scale_y, capture,
+        )?;
     }
 
     Ok(CapturedPixels {
@@ -539,9 +543,11 @@ fn validate_capture(capture: &CapturedPixels) -> Result<()> {
     Ok(())
 }
 
-fn capture_scale(capture: &CapturedPixels) -> f64 {
-    (capture.width as f64 / capture.desktop_width)
-        .max(capture.height as f64 / capture.desktop_height)
+fn capture_scale(capture: &CapturedPixels) -> (f64, f64) {
+    (
+        capture.width as f64 / capture.desktop_width,
+        capture.height as f64 / capture.desktop_height,
+    )
 }
 
 fn copy_capture(
@@ -550,18 +556,19 @@ fn copy_capture(
     height: u32,
     min_x: f64,
     min_y: f64,
-    scale: f64,
+    scale_x: f64,
+    scale_y: f64,
     capture: &CapturedPixels,
 ) -> Result<()> {
-    let x = pixels_for_desktop_length(capture.desktop_origin.x() - min_x, scale)?;
-    let y = pixels_for_desktop_length(capture.desktop_origin.y() - min_y, scale)?;
+    let x = pixels_for_desktop_length(capture.desktop_origin.x() - min_x, scale_x)?;
+    let y = pixels_for_desktop_length(capture.desktop_origin.y() - min_y, scale_y)?;
     let right = pixels_for_desktop_length(
         capture.desktop_origin.x() + capture.desktop_width - min_x,
-        scale,
+        scale_x,
     )?;
     let bottom = pixels_for_desktop_length(
         capture.desktop_origin.y() + capture.desktop_height - min_y,
-        scale,
+        scale_y,
     )?;
     let target_width = right.checked_sub(x).ok_or(Error::OperationFailed)?;
     let target_height = bottom.checked_sub(y).ok_or(Error::OperationFailed)?;
@@ -805,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn composing_captures_scales_to_highest_pixel_density() {
+    fn composing_captures_scales_each_axis_to_its_highest_pixel_density() {
         let low_density = CapturedPixels {
             rgba: vec![255, 0, 0, 255],
             width: 1,
@@ -826,12 +833,11 @@ mod tests {
         let composed = compose_captures(vec![low_density, high_density]).unwrap();
 
         assert_eq!(composed.width, 4);
-        assert_eq!(composed.height, 2);
+        assert_eq!(composed.height, 1);
         assert_eq!(
             composed.rgba,
             [
-                255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 0, 0, 255,
-                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
+                255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
             ]
         );
     }
