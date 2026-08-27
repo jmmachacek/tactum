@@ -3,7 +3,7 @@ use std::{ffi::c_void, mem::size_of, thread, time::Duration};
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 
 use windows_sys::Win32::{
-    Foundation::{BOOL, GlobalFree, HGLOBAL, LPARAM, RECT},
+    Foundation::{BOOL, GlobalFree, HGLOBAL, HWND, LPARAM, RECT},
     Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, CreateCompatibleDC,
         CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, EnumDisplayMonitors, GetDC,
@@ -29,7 +29,10 @@ use windows_sys::Win32::{
             MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
             MOUSEINPUT, SendInput,
         },
-        WindowsAndMessaging::{MONITORINFOF_PRIMARY, SetCursorPos, WHEEL_DELTA},
+        WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, HWND_MESSAGE, MONITORINFOF_PRIMARY, SetCursorPos,
+            WHEEL_DELTA,
+        },
     },
 };
 
@@ -44,6 +47,8 @@ const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
 const CF_UNICODETEXT: u32 = 13;
 
 struct OpenClipboardGuard;
+
+struct ClipboardOwner(HWND);
 
 struct DpiAwarenessGuard(DPI_AWARENESS_CONTEXT);
 
@@ -65,14 +70,55 @@ impl Drop for DpiAwarenessGuard {
 }
 
 impl OpenClipboardGuard {
-    fn open() -> Result<Self> {
+    fn open(owner: HWND) -> Result<Self> {
         for _ in 0..10 {
-            if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 {
+            if unsafe { OpenClipboard(owner) } != 0 {
                 return Ok(Self);
             }
             thread::sleep(Duration::from_millis(10));
         }
         Err(Error::OperationFailed)
+    }
+}
+
+impl ClipboardOwner {
+    fn create() -> Result<Self> {
+        const STATIC_CLASS: [u16; 7] = [
+            b'S' as u16,
+            b'T' as u16,
+            b'A' as u16,
+            b'T' as u16,
+            b'I' as u16,
+            b'C' as u16,
+            0,
+        ];
+
+        let window = unsafe {
+            CreateWindowExW(
+                0,
+                STATIC_CLASS.as_ptr(),
+                std::ptr::null(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                HWND_MESSAGE,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        if window.is_null() {
+            return Err(Error::OperationFailed);
+        }
+        Ok(Self(window))
+    }
+}
+
+impl Drop for ClipboardOwner {
+    fn drop(&mut self) {
+        unsafe { DestroyWindow(self.0) };
     }
 }
 
@@ -556,7 +602,7 @@ impl Computer {
     }
 
     pub(crate) fn read_clipboard(&self) -> Result<Option<String>> {
-        let _clipboard = OpenClipboardGuard::open()?;
+        let _clipboard = OpenClipboardGuard::open(std::ptr::null_mut())?;
         if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) } == 0 {
             return Ok(None);
         }
@@ -614,7 +660,8 @@ impl Computer {
         }
 
         let result = (|| {
-            let _clipboard = OpenClipboardGuard::open()?;
+            let owner = ClipboardOwner::create()?;
+            let _clipboard = OpenClipboardGuard::open(owner.0)?;
             if unsafe { EmptyClipboard() } == 0 {
                 return Err(Error::OperationFailed);
             }
@@ -721,7 +768,7 @@ mod tests {
             let computer = Computer;
             if let Some(text) = &self.original {
                 let _ = computer.write_clipboard(text);
-            } else if let Ok(_clipboard) = OpenClipboardGuard::open() {
+            } else if let Ok(_clipboard) = OpenClipboardGuard::open(std::ptr::null_mut()) {
                 unsafe { EmptyClipboard() };
             }
         }
