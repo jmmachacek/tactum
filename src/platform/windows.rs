@@ -431,6 +431,7 @@ fn capture_rectangle(left: i32, top: i32, width: i32, height: i32) -> Result<Cap
 
     for pixel in rgba.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
+        pixel[3] = u8::MAX;
     }
     let mut png = Vec::new();
     PngEncoder::new(&mut png)
@@ -730,6 +731,7 @@ mod tests {
         let image = image::load_from_memory(&screenshot.png).unwrap();
         assert_eq!(image.dimensions(), (screenshot.width, screenshot.height));
         assert_eq!(&screenshot.png[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(image.to_rgba8().pixels().all(|pixel| pixel[3] == u8::MAX));
     }
 
     fn assert_matches_display(screenshot: &CapturedScreenshot, display: &CapturedDisplay) {
