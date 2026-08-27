@@ -632,8 +632,124 @@ fn encode_screenshot(capture: CapturedPixels) -> Result<CapturedScreenshot> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CapturedPixels, compose_captures};
-    use crate::{Error, Point};
+    use std::{collections::HashSet, sync::Mutex};
+
+    use image::GenericImageView;
+
+    use super::{
+        CGDisplay, CapturedPixels, Computer, NSPasteboard, autoreleasepool, compose_captures,
+    };
+    use crate::{
+        Error, Point,
+        platform::{CapturedDisplay, CapturedScreenshot},
+    };
+
+    static CLIPBOARD_TEST: Mutex<()> = Mutex::new(());
+
+    struct ClipboardRestore {
+        original: Option<String>,
+    }
+
+    impl Drop for ClipboardRestore {
+        fn drop(&mut self) {
+            let computer = Computer;
+            if let Some(text) = &self.original {
+                let _ = computer.write_clipboard(text);
+            } else {
+                autoreleasepool(|_| {
+                    NSPasteboard::generalPasteboard().clearContents();
+                });
+            }
+        }
+    }
+
+    fn assert_valid_png(screenshot: &CapturedScreenshot) {
+        let image = image::load_from_memory(&screenshot.png).unwrap();
+        assert_eq!(image.dimensions(), (screenshot.width, screenshot.height));
+        assert_eq!(&screenshot.png[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    fn assert_matches_display(screenshot: &CapturedScreenshot, display: &CapturedDisplay) {
+        assert_eq!(screenshot.desktop_origin, display.origin);
+        assert_eq!(screenshot.desktop_width, display.width);
+        assert_eq!(screenshot.desktop_height, display.height);
+        assert_valid_png(screenshot);
+    }
+
+    #[test]
+    fn enumerates_active_displays() {
+        let computer = Computer;
+        let displays = computer.displays().unwrap();
+        let main_display = u64::from(CGDisplay::main().id);
+        let display_ids: HashSet<_> = displays.iter().map(|display| display.id).collect();
+
+        assert!(!displays.is_empty());
+        assert!(displays.iter().any(|display| display.id == main_display));
+        assert_eq!(display_ids.len(), displays.len());
+        for display in displays {
+            assert!(display.width > 0.0);
+            assert!(display.height > 0.0);
+            assert!(display.scale_x.is_finite() && display.scale_x > 0.0);
+            assert!(display.scale_y.is_finite() && display.scale_y > 0.0);
+        }
+    }
+
+    #[test]
+    fn captures_primary_selected_and_virtual_desktop_when_permitted() {
+        let computer = Computer;
+        let displays = computer.displays().unwrap();
+        let primary = displays
+            .iter()
+            .find(|display| display.id == u64::from(CGDisplay::main().id))
+            .unwrap();
+
+        let screenshot = match computer.screenshot() {
+            Ok(screenshot) => screenshot,
+            Err(Error::PermissionDenied) => return,
+            Err(error) => panic!("primary display capture failed: {error}"),
+        };
+        assert_matches_display(&screenshot, primary);
+
+        let selected = computer.screenshot_display(displays[0].id).unwrap();
+        assert_matches_display(&selected, &displays[0]);
+
+        let all = computer.screenshot_all_displays().unwrap();
+        let first = &displays[0];
+        let (min_x, min_y, max_x, max_y) = displays.iter().skip(1).fold(
+            (
+                first.origin.x(),
+                first.origin.y(),
+                first.origin.x() + first.width,
+                first.origin.y() + first.height,
+            ),
+            |(min_x, min_y, max_x, max_y), display| {
+                (
+                    min_x.min(display.origin.x()),
+                    min_y.min(display.origin.y()),
+                    max_x.max(display.origin.x() + display.width),
+                    max_y.max(display.origin.y() + display.height),
+                )
+            },
+        );
+        assert_eq!(all.desktop_origin.x(), min_x);
+        assert_eq!(all.desktop_origin.y(), min_y);
+        assert_eq!(all.desktop_width, max_x - min_x);
+        assert_eq!(all.desktop_height, max_y - min_y);
+        assert_valid_png(&all);
+    }
+
+    #[test]
+    fn clipboard_round_trips_unicode_text() {
+        let _lock = CLIPBOARD_TEST.lock().unwrap();
+        let computer = Computer;
+        let _restore = ClipboardRestore {
+            original: computer.read_clipboard().unwrap(),
+        };
+        let text = "Tactum clipboard test\n世界 🚀";
+
+        computer.write_clipboard(text).unwrap();
+        assert_eq!(computer.read_clipboard().unwrap().as_deref(), Some(text));
+    }
 
     #[test]
     fn composing_one_capture_reuses_its_pixels() {
