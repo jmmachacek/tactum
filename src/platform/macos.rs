@@ -2,13 +2,17 @@ use std::{thread, time::Duration};
 
 use core_graphics::{
     access::ScreenCaptureAccess,
+    base::{kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst},
+    color_space::{CGColorSpace, kCGColorSpaceSRGB},
+    context::{CGBlendMode, CGContext},
     display::CGDisplay,
     event::{
         CGEvent, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton, EventField,
         ScrollEventUnit,
     },
     event_source::{CGEventSource, CGEventSourceStateID},
-    geometry::CGPoint,
+    geometry::{CGPoint, CGRect, CGSize},
+    image::CGImage,
 };
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use objc2::rc::autoreleasepool;
@@ -378,35 +382,7 @@ impl Computer {
         if width == 0 || height == 0 {
             return Err(Error::OperationFailed);
         }
-        let row_length = usize::try_from(width)
-            .ok()
-            .and_then(|width| width.checked_mul(4))
-            .ok_or(Error::OperationFailed)?;
-        let rgba_length = row_length
-            .checked_mul(height as usize)
-            .ok_or(Error::OperationFailed)?;
-        let bytes_per_row = image.bytes_per_row();
-        let data = image.data();
-        let data = data.bytes();
-        if image.bits_per_component() != 8
-            || image.bits_per_pixel() != 32
-            || bytes_per_row < row_length
-            || data.len()
-                < bytes_per_row
-                    .checked_mul(height as usize)
-                    .ok_or(Error::OperationFailed)?
-        {
-            return Err(Error::OperationFailed);
-        }
-
-        // CGDisplay images are 32-bit little-endian BGRA. Pack rows and convert to RGBA.
-        let mut rgba = Vec::with_capacity(rgba_length);
-        for row in data.chunks_exact(bytes_per_row).take(height as usize) {
-            rgba.extend_from_slice(&row[..row_length]);
-        }
-        for pixel in rgba.as_chunks_mut::<4>().0 {
-            pixel.swap(0, 2);
-        }
+        let rgba = render_image_to_rgba(&image)?;
 
         let desktop_origin = Point::new(display_bounds.origin.x, display_bounds.origin.y)
             .map_err(|_| Error::OperationFailed)?;
@@ -418,6 +394,71 @@ impl Computer {
             desktop_width,
             desktop_height,
         })
+    }
+}
+
+fn render_image_to_rgba(image: &CGImage) -> Result<Vec<u8>> {
+    let width = image.width();
+    let height = image.height();
+    if width == 0 || height == 0 {
+        return Err(Error::OperationFailed);
+    }
+
+    let row_length = width.checked_mul(4).ok_or(Error::OperationFailed)?;
+    let rgba_length = row_length
+        .checked_mul(height)
+        .ok_or(Error::OperationFailed)?;
+    let mut rgba = vec![0; rgba_length];
+
+    // Let Core Graphics normalize source layout and color into a known sRGB bitmap format.
+    let color_space = unsafe { CGColorSpace::create_with_name(kCGColorSpaceSRGB) }
+        .ok_or(Error::OperationFailed)?;
+    let context = CGContext::create_bitmap_context(
+        Some(rgba.as_mut_ptr().cast()),
+        width,
+        height,
+        8,
+        row_length,
+        &color_space,
+        kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little,
+    );
+
+    context.set_blend_mode(CGBlendMode::Copy);
+    context.draw_image(
+        CGRect::new(
+            &CGPoint::new(0.0, 0.0),
+            &CGSize::new(width as f64, height as f64),
+        ),
+        image,
+    );
+    drop(context);
+
+    premultiplied_bgra_to_opaque_rgba(&mut rgba);
+    Ok(rgba)
+}
+
+fn premultiplied_bgra_to_opaque_rgba(rgba: &mut [u8]) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
+        let [blue, green, red, alpha] = *pixel;
+        if alpha == u8::MAX {
+            pixel.swap(0, 2);
+            continue;
+        }
+        if alpha == 0 {
+            *pixel = [0, 0, 0, u8::MAX];
+            continue;
+        }
+
+        let unpremultiply = |component: u8| {
+            ((u32::from(component) * u32::from(u8::MAX) + u32::from(alpha) / 2) / u32::from(alpha))
+                .min(u32::from(u8::MAX)) as u8
+        };
+        *pixel = [
+            unpremultiply(red),
+            unpremultiply(green),
+            unpremultiply(blue),
+            u8::MAX,
+        ];
     }
 }
 
@@ -673,13 +714,19 @@ fn encode_screenshot(capture: CapturedPixels) -> Result<CapturedScreenshot> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, sync::Mutex};
+    use std::{collections::HashSet, sync::Arc, sync::Mutex};
 
+    use core_graphics::{
+        base::{kCGBitmapByteOrder32Big, kCGImageAlphaLast, kCGRenderingIntentDefault},
+        color_space::{CGColorSpace, kCGColorSpaceSRGB},
+        data_provider::CGDataProvider,
+        image::CGImage,
+    };
     use image::GenericImageView;
 
     use super::{
         CGDisplay, CapturedPixels, Computer, NSPasteboard, autoreleasepool, compose_captures,
-        display_scale,
+        display_scale, premultiplied_bgra_to_opaque_rgba, render_image_to_rgba,
     };
     use crate::{
         Error, Point,
@@ -709,6 +756,7 @@ mod tests {
         let image = image::load_from_memory(&screenshot.png).unwrap();
         assert_eq!(image.dimensions(), (screenshot.width, screenshot.height));
         assert_eq!(&screenshot.png[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(image.to_rgba8().pixels().all(|pixel| pixel[3] == u8::MAX));
     }
 
     fn assert_matches_display(screenshot: &CapturedScreenshot, display: &CapturedDisplay) {
@@ -749,6 +797,58 @@ mod tests {
         assert_eq!(
             display_scale(3840, 2160, 1080.0, 1920.0, 270.0).unwrap(),
             (2.0, 2.0)
+        );
+    }
+
+    #[test]
+    fn normalizes_premultiplied_bgra_to_opaque_rgba() {
+        let mut pixels = [
+            201, 83, 17, 255, // Opaque BGRA.
+            16, 32, 64, 128, // Premultiplied BGRA.
+            0, 0, 0, 0, // Fully transparent.
+        ];
+
+        premultiplied_bgra_to_opaque_rgba(&mut pixels);
+
+        assert_eq!(
+            pixels,
+            [
+                17, 83, 201, 255, // Opaque RGBA.
+                128, 64, 32, 255, // Unpremultiplied and made opaque.
+                0, 0, 0, 255, // Transparent source becomes opaque black.
+            ]
+        );
+    }
+
+    #[test]
+    fn renders_known_cgimage_layout_to_srgb_rgba() {
+        let source = Arc::new(vec![
+            255, 0, 0, 255, // Top row: opaque red RGBA.
+            128, 64, 32, 128, // Middle row: translucent brown RGBA.
+            0, 0, 255, 255, // Bottom row: opaque blue RGBA.
+        ]);
+        let provider = CGDataProvider::from_buffer(source);
+        let color_space = unsafe { CGColorSpace::create_with_name(kCGColorSpaceSRGB) }.unwrap();
+        let image = CGImage::new(
+            1,
+            3,
+            8,
+            32,
+            4,
+            &color_space,
+            kCGImageAlphaLast | kCGBitmapByteOrder32Big,
+            &provider,
+            false,
+            kCGRenderingIntentDefault,
+        );
+
+        assert_eq!(
+            render_image_to_rgba(&image).unwrap(),
+            [
+                255, 0, 0, 255, // Top row remains red.
+                128, 64, 32, 255, // Middle row is unpremultiplied and made opaque.
+                0, 0, 255, 255, // Bottom row remains blue.
+            ]
         );
     }
 
