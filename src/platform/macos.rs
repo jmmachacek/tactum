@@ -308,16 +308,13 @@ impl Computer {
                     return Err(Error::OperationFailed);
                 }
                 let mode = display.display_mode().ok_or(Error::OperationFailed)?;
-                let pixel_width = mode.pixel_width();
-                let pixel_height = mode.pixel_height();
-                if pixel_width == 0 || pixel_height == 0 {
-                    return Err(Error::OperationFailed);
-                }
-                let scale_x = pixel_width as f64 / width;
-                let scale_y = pixel_height as f64 / height;
-                if !scale_x.is_finite() || !scale_y.is_finite() {
-                    return Err(Error::OperationFailed);
-                }
+                let (scale_x, scale_y) = display_scale(
+                    mode.pixel_width(),
+                    mode.pixel_height(),
+                    width,
+                    height,
+                    display.rotation(),
+                )?;
 
                 Ok(CapturedDisplay {
                     id: u64::from(id),
@@ -424,6 +421,37 @@ impl Computer {
     }
 }
 
+fn display_scale(
+    mut pixel_width: u64,
+    mut pixel_height: u64,
+    width: f64,
+    height: f64,
+    rotation: f64,
+) -> Result<(f64, f64)> {
+    if pixel_width == 0
+        || pixel_height == 0
+        || !width.is_finite()
+        || !height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+        || !rotation.is_finite()
+    {
+        return Err(Error::OperationFailed);
+    }
+
+    let quarter_turn = (rotation.rem_euclid(360.0) / 90.0).round() as u8 % 4;
+    if quarter_turn % 2 == 1 {
+        std::mem::swap(&mut pixel_width, &mut pixel_height);
+    }
+
+    let scale_x = pixel_width as f64 / width;
+    let scale_y = pixel_height as f64 / height;
+    if !scale_x.is_finite() || !scale_y.is_finite() {
+        return Err(Error::OperationFailed);
+    }
+    Ok((scale_x, scale_y))
+}
+
 fn create_mouse_click(
     source: CGEventSource,
     button: MouseButton,
@@ -511,7 +539,13 @@ fn compose_captures(mut captures: Vec<CapturedPixels>) -> Result<CapturedPixels>
 
     for capture in &captures {
         copy_capture(
-            &mut rgba, width, height, min_x, min_y, scale_x, scale_y, capture,
+            &mut rgba,
+            width,
+            height,
+            min_x,
+            min_y,
+            (scale_x, scale_y),
+            capture,
         )?;
     }
 
@@ -556,10 +590,10 @@ fn copy_capture(
     height: u32,
     min_x: f64,
     min_y: f64,
-    scale_x: f64,
-    scale_y: f64,
+    scale: (f64, f64),
     capture: &CapturedPixels,
 ) -> Result<()> {
+    let (scale_x, scale_y) = scale;
     let x = pixels_for_desktop_length(capture.desktop_origin.x() - min_x, scale_x)?;
     let y = pixels_for_desktop_length(capture.desktop_origin.y() - min_y, scale_y)?;
     let right = pixels_for_desktop_length(
@@ -645,6 +679,7 @@ mod tests {
 
     use super::{
         CGDisplay, CapturedPixels, Computer, NSPasteboard, autoreleasepool, compose_captures,
+        display_scale,
     };
     use crate::{
         Error, Point,
@@ -699,6 +734,22 @@ mod tests {
             assert!(display.scale_x.is_finite() && display.scale_x > 0.0);
             assert!(display.scale_y.is_finite() && display.scale_y > 0.0);
         }
+    }
+
+    #[test]
+    fn display_scale_accounts_for_rotation() {
+        let scale = |rotation| display_scale(3840, 2160, 1920.0, 1080.0, rotation).unwrap();
+
+        assert_eq!(scale(0.0), (2.0, 2.0));
+        assert_eq!(
+            display_scale(3840, 2160, 1080.0, 1920.0, 90.0).unwrap(),
+            (2.0, 2.0)
+        );
+        assert_eq!(scale(180.0), (2.0, 2.0));
+        assert_eq!(
+            display_scale(3840, 2160, 1080.0, 1920.0, 270.0).unwrap(),
+            (2.0, 2.0)
+        );
     }
 
     #[test]
