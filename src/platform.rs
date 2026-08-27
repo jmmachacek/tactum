@@ -1,5 +1,6 @@
 use crate::Point;
 
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn coalesced_text_characters(text: &str) -> impl Iterator<Item = char> + '_ {
     let mut is_prev_cr = false;
     text.chars().filter(move |&c| {
