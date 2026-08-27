@@ -1,5 +1,14 @@
 use crate::Point;
 
+fn coalesced_text_characters(text: &str) -> impl Iterator<Item = char> + '_ {
+    let mut is_prev_cr = false;
+    text.chars().filter(move |&c| {
+        let emit = c != '\n' || !is_prev_cr;
+        is_prev_cr = c == '\r';
+        emit
+    })
+}
+
 pub(crate) struct CapturedDisplay {
     pub(crate) id: u64,
     pub(crate) origin: Point,
@@ -32,3 +41,16 @@ pub(crate) use windows::Computer;
 mod unsupported;
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub(crate) use unsupported::Computer;
+
+#[cfg(test)]
+mod tests {
+    use super::coalesced_text_characters;
+
+    #[test]
+    fn coalesces_crlf_without_changing_other_characters() {
+        assert_eq!(
+            coalesced_text_characters("a\r\nb\rc\nd\r\n\n世界").collect::<String>(),
+            "a\rb\rc\nd\r\n世界"
+        );
+    }
+}

@@ -38,7 +38,7 @@ use windows_sys::Win32::{
 
 use crate::{
     Error, Key, MouseButton, Point, Result,
-    platform::{CapturedDisplay, CapturedScreenshot},
+    platform::{CapturedDisplay, CapturedScreenshot, coalesced_text_characters},
 };
 
 pub(crate) struct Computer;
@@ -583,7 +583,7 @@ impl Computer {
     }
 
     pub(crate) fn type_text(&self, text: &str) -> Result<()> {
-        for character in text.chars() {
+        for character in coalesced_text_characters(text) {
             match character {
                 '\n' | '\r' => self.key_press(Key::Return)?,
                 '\t' => self.key_press(Key::Tab)?,

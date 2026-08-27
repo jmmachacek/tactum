@@ -21,7 +21,7 @@ use objc2_foundation::NSString;
 
 use crate::{
     Error, Key, MouseButton, Point, Result,
-    platform::{CapturedDisplay, CapturedScreenshot},
+    platform::{CapturedDisplay, CapturedScreenshot, coalesced_text_characters},
 };
 
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -242,7 +242,7 @@ impl Computer {
     pub(crate) fn type_text(&self, text: &str) -> Result<()> {
         let source = input_event_source()?;
 
-        for character in text.chars() {
+        for character in coalesced_text_characters(text) {
             match character {
                 '\n' | '\r' => post_key_press(source.clone(), get_key_code(Key::Return))?,
                 '\t' => post_key_press(source.clone(), get_key_code(Key::Tab))?,
