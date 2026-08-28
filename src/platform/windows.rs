@@ -44,6 +44,7 @@ use crate::{
 pub(crate) struct Computer;
 
 const INPUT_EVENT_DELAY: Duration = Duration::from_millis(30);
+const TEXT_INPUT_BATCH_SIZE: usize = 128;
 const CF_UNICODETEXT: u32 = 13;
 
 struct OpenClipboardGuard;
@@ -252,6 +253,42 @@ fn unicode_input(code_unit: u16, key_down: bool) -> INPUT {
             },
         },
     }
+}
+
+fn send_text_input_batches(text: &str, mut send: impl FnMut(&[INPUT]) -> Result<()>) -> Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    let mut inputs = Vec::with_capacity(TEXT_INPUT_BATCH_SIZE);
+    for character in coalesced_text_characters(text) {
+        let event_count = character.len_utf16() * 2;
+        if inputs.len() + event_count > TEXT_INPUT_BATCH_SIZE {
+            send(&inputs)?;
+            inputs.clear();
+        }
+
+        match character {
+            '\n' | '\r' => {
+                inputs.extend([key_input(Key::Return, true), key_input(Key::Return, false)])
+            }
+            '\t' => inputs.extend([key_input(Key::Tab, true), key_input(Key::Tab, false)]),
+            _ => {
+                let mut utf16 = [0; 2];
+                for &code_unit in character.encode_utf16(&mut utf16).iter() {
+                    inputs.extend([
+                        unicode_input(code_unit, true),
+                        unicode_input(code_unit, false),
+                    ]);
+                }
+            }
+        }
+    }
+
+    if !inputs.is_empty() {
+        send(&inputs)?;
+    }
+    Ok(())
 }
 
 fn cursor_position(point: Point) -> Result<(i32, i32)> {
@@ -583,22 +620,7 @@ impl Computer {
     }
 
     pub(crate) fn type_text(&self, text: &str) -> Result<()> {
-        for character in coalesced_text_characters(text) {
-            match character {
-                '\n' | '\r' => self.key_press(Key::Return)?,
-                '\t' => self.key_press(Key::Tab)?,
-                _ => {
-                    let mut utf16 = [0; 2];
-                    for &code_unit in character.encode_utf16(&mut utf16).iter() {
-                        send_inputs(&[
-                            unicode_input(code_unit, true),
-                            unicode_input(code_unit, false),
-                        ])?;
-                    }
-                }
-            }
-        }
-        Ok(())
+        send_text_input_batches(text, send_inputs)
     }
 
     pub(crate) fn read_clipboard(&self) -> Result<Option<String>> {
@@ -753,7 +775,7 @@ mod tests {
 
     use super::{
         Computer, EmptyClipboard, Key, OpenClipboardGuard, enumerate_displays, key_input,
-        unicode_input,
+        send_text_input_batches, unicode_input,
     };
     use crate::platform::{CapturedDisplay, CapturedScreenshot};
 
@@ -873,5 +895,23 @@ mod tests {
         let unicode = unsafe { unicode.Anonymous.ki };
         assert_eq!(unicode.wScan, '界' as u16);
         assert_eq!(unicode.dwFlags, KEYEVENTF_UNICODE);
+    }
+
+    #[test]
+    fn batches_text_inputs_without_splitting_characters() {
+        let batch_lengths = |text: &str| {
+            let mut lengths = Vec::new();
+            send_text_input_batches(text, |inputs| {
+                lengths.push(inputs.len());
+                Ok(())
+            })
+            .unwrap();
+            lengths
+        };
+
+        assert_eq!(batch_lengths(&"a".repeat(64)), [128]);
+        assert_eq!(batch_lengths(&"a".repeat(100)), [128, 72]);
+        assert_eq!(batch_lengths(&format!("{}🚀", "a".repeat(63))), [126, 4]);
+        assert!(batch_lengths("").is_empty());
     }
 }
