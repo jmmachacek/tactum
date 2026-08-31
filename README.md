@@ -39,3 +39,8 @@ Tactum currently supports macOS and Windows. Other platforms return
 
 On macOS, input control and screenshots may require Accessibility and Screen
 Recording permissions in System Settings.
+
+## License
+
+Licensed under either the [Apache License, Version 2.0](LICENSE-APACHE) or the
+[MIT License](LICENSE-MIT), at your option.
